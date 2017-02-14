@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 
 #include "..\..\..\Common\Packet32.h"
 
@@ -8,7 +56,7 @@
 
 #include "../../../Common/WpcapNames.h"
 // "\\Device\\NPF_{%s}" or "\\Device\\NPCAP_{%s}"
-#define NPF_DRIVER_FORMAT_STR	_T("\\Device\\") _T(NPF_DRIVER_NAME) _T("_{%s}")
+#define NPF_DRIVER_FORMAT_STR	"\\Device\\" NPF_DRIVER_NAME "_WIFI_{%s}"
 
 vector<tstring> g_strAdapterNames;
 vector<tstring> g_strAdapterGUIDs;
@@ -83,11 +131,7 @@ tstring PhyType2String(ULONG PhyType)
 {
 	if (PhyType == dot11_phy_type_unknown)
 	{
-		return _T("unknown");
-	}
-	else if (PhyType == dot11_phy_type_any)
-	{
-		return _T("any");
+		return _T("unknown or any");
 	}
 	else if (PhyType == dot11_phy_type_fhss)
 	{
@@ -123,11 +167,112 @@ tstring PhyType2String(ULONG PhyType)
 	}
 	else if (dot11_phy_type_IHV_start <= PhyType && PhyType <= dot11_phy_type_IHV_end)
 	{
-		return _T("ihv");
+		return _T("ihv (") + itos(PhyType) + _T(")");
 	}
 	else
 	{
-		return _T("undefined");
+		return _T("");
+	}
+}
+
+ULONG String2PhyType(tstring strPhyType)
+{
+	if (strPhyType == _T("fhss"))
+	{
+		return dot11_phy_type_fhss;
+	}
+	else if (strPhyType == _T("dsss"))
+	{
+		return dot11_phy_type_dsss;
+	}
+	else if (strPhyType == _T("irbaseband"))
+	{
+		return dot11_phy_type_irbaseband;
+	}
+	else if (strPhyType == _T("ofdm"))
+	{
+		return dot11_phy_type_ofdm;
+	}
+	else if (strPhyType == _T("hrdsss"))
+	{
+		return dot11_phy_type_hrdsss;
+	}
+	else if (strPhyType == _T("erp"))
+	{
+		return dot11_phy_type_erp;
+	}
+	else if (strPhyType == _T("ht"))
+	{
+		return dot11_phy_type_ht;
+	}
+	else if (strPhyType == _T("vht"))
+	{
+		return dot11_phy_type_vht;
+	}
+	else if (strPhyType.size() > 5 && strPhyType.substr(0, 5) == _T("ihv ("))
+	{
+		ULONG ulPhyType;
+		_stscanf_s(strPhyType.c_str(), _T("ihv (%d)"), &ulPhyType);
+		if (dot11_phy_type_IHV_start <= ulPhyType && ulPhyType <= dot11_phy_type_IHV_end)
+		{
+			return ulPhyType;
+		}
+		else
+		{
+			return dot11_phy_type_unknown;
+		}
+	}
+	else
+	{
+		return dot11_phy_type_unknown;
+	}
+}
+
+// NDIS_STATUS definitions returned by NdisOidRequest() from ndis.h in WDK.
+#define NDIS_STATUS_NOT_RECOGNIZED              ((NDIS_STATUS)0x00010001L)
+#define NDIS_STATUS_NOT_ACCEPTED                ((NDIS_STATUS)0x00010003L)
+#define NDIS_STATUS_CLOSING                     ((NDIS_STATUS)0xC0010002L)
+#define NDIS_STATUS_RESET_IN_PROGRESS           ((NDIS_STATUS)0xC001000DL)
+#define NDIS_STATUS_CLOSING_INDICATING          ((NDIS_STATUS)0xC001000EL)
+#define NDIS_STATUS_INVALID_LENGTH              ((NDIS_STATUS)0xC0010014L)
+#define NDIS_STATUS_INVALID_DATA                ((NDIS_STATUS)0xC0010015L)
+#define NDIS_STATUS_BUFFER_TOO_SHORT            ((NDIS_STATUS)0xC0010016L)
+#define NDIS_STATUS_INVALID_OID                 ((NDIS_STATUS)0xC0010017L)
+
+// The error messages are retrieved from: https://msdn.microsoft.com/en-us/library/windows/hardware/ff563710%28v=vs.85%29.aspx
+tstring NdisStatus2Message(DWORD dwStatus)
+{
+	if (dwStatus == NDIS_STATUS_NOT_RECOGNIZED)
+	{
+		return _T("The underlying driver does not support the requested operation.");
+	}
+	else if (dwStatus == NDIS_STATUS_NOT_ACCEPTED)
+	{
+		return _T("The underlying driver attempted the requested operation, usually a set on a NIC, but it failed. For example, an attempt to set too many multicast addresses might cause the return of this value.");
+	}
+	else if (dwStatus == NDIS_STATUS_CLOSING || dwStatus == NDIS_STATUS_CLOSING_INDICATING)
+	{
+		return _T("The underlying driver failed the requested operation because a close operation is in progress.");
+	}
+	else if (dwStatus == NDIS_STATUS_RESET_IN_PROGRESS)
+	{
+		return _T("The underlying miniport driver cannot satisfy the request at this time because it is currently resetting the affected NIC. The caller's ProtocolStatusEx function was or will be called with NDIS_STATUS_RESET_START to indicate that a reset is in progress. This return value does not necessarily indicate that the same request, submitted later, will be failed for the same reason.");
+	}
+	else if (dwStatus == NDIS_STATUS_INVALID_LENGTH || dwStatus == NDIS_STATUS_BUFFER_TOO_SHORT)
+	{
+		return _T("The value specified in the InformationBufferLength member of the NDIS_OID_REQUEST-structured buffer at OidRequest does not match the requirements for the given OID_XXX code. If the information buffer is too small, the BytesNeeded member contains the correct value for InformationBufferLength on return from NdisOidRequest.");
+	}
+	else if (dwStatus == NDIS_STATUS_INVALID_DATA)
+	{
+		return _T("The data supplied at InformationBuffer in the given NDIS_OID_REQUEST structure is invalid for the given OID_XXX code.");
+	}
+	else if (dwStatus == NDIS_STATUS_INVALID_OID)
+	{
+		return _T("The OID_XXX code specified in the Oid member of the NDIS_OID_REQUEST-structured buffer at OidRequest is invalid or unsupported by the underlying driver.");
+	}
+	else
+	{
+		return _T("");
 	}
 }
 
@@ -189,37 +334,27 @@ BOOL wstring2string(const std::wstring &wstr, std::string &str)
 	return TRUE;
 }
 
-wstring any2wstring_a(string &str)
+wstring tstring2wstring(tstring &str)
 {
+#ifdef UNICODE
+	return str;
+#else
 	wstring wstr;
 	string2wstring(str, wstr);
 	return wstr;
-}
-
-wstring any2wstring_w(wstring &wstr)
-{
-	return wstr;
-}
-
-string any2string_a(string &str)
-{
-	return str;
-}
-
-string any2string_w(wstring &wstr)
-{
-	string str;
-	wstring2string(wstr, str);
-	return str;
-}
-
-#ifdef UNICODE
-#define any2wstring any2wstring_w
-#define any2string any2string_w
-#else
-#define any2wstring any2wstring_a
-#define any2string any2string_a
 #endif
+}
+
+string tstring2string(tstring &str)
+{
+#ifdef UNICODE
+	string astr;
+	wstring2string(str, astr);
+	return astr;
+#else
+	return str;
+#endif
+}
 
 tstring itos(int i)
 {
@@ -408,13 +543,20 @@ BOOL makeOIDRequest(tstring strAdapterGUID, ULONG iOid, BOOL bSet, PVOID pData, 
 		goto makeOIDRequest_Exit3;
 	}
 
+	if (strAdapterGUID == _T(""))
+	{
+		_tprintf(_T("Error: makeOIDRequest::strAdapterGUID error, the adapter name is incorrect.\n"));
+		Status = FALSE;
+		goto makeOIDRequest_Exit3;
+	}
+
 	char strAdapterName[256];
-	sprintf_s(strAdapterName, 256, "\\Device\\NPF_{%s}", any2string(strAdapterGUID).c_str());
+	sprintf_s(strAdapterName, 256, NPF_DRIVER_FORMAT_STR, tstring2string(strAdapterGUID).c_str());
 
 	LPADAPTER pAdapter = My_PacketOpenAdapter(strAdapterName);
 	if (pAdapter == NULL)
 	{
-		_tprintf(_T("Error: makeOIDRequest::My_PacketOpenAdapter error\n"));
+		_tprintf(_T("Error: makeOIDRequest::My_PacketOpenAdapter error (to use this function, you need to check the \"Support raw 802.11 traffic\" option when installing Npcap)\n"));
 		Status = FALSE;
 		goto makeOIDRequest_Exit2;
 	}
@@ -440,7 +582,41 @@ BOOL makeOIDRequest(tstring strAdapterGUID, ULONG iOid, BOOL bSet, PVOID pData, 
 	Status = My_PacketRequest(pAdapter, bSet, OidData);
 	if (!Status)
 	{
-		_tprintf(_T("Error: makeOIDRequest::My_PacketRequest error, error code = %d\n"), GetLastError());
+		// Convert our NTSTATUS from a customer-defined value to a Microsoft-defined value.
+		// Refer to: https://msdn.microsoft.com/en-us/library/windows/hardware/ff543026(v=vs.85).aspx
+		DWORD dwErrorCode = GetLastError() & ~(1 << 29);
+
+		LPTSTR strErrorText;
+		HMODULE hModule = LoadLibrary(_T("NTDLL.DLL"));
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_FROM_HMODULE,
+			hModule, dwErrorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&strErrorText, 0, NULL);
+		if (strErrorText != NULL && strErrorText[_tcslen(strErrorText) - 2] == _T('\r') && strErrorText[_tcslen(strErrorText) - 1] == _T('\n'))
+		{
+			strErrorText[_tcslen(strErrorText) - 2] = 0x0;
+			strErrorText[_tcslen(strErrorText) - 1] = 0x0;
+		}
+		
+		if (strErrorText)
+		{
+			_tprintf(_T("Error: makeOIDRequest::My_PacketRequest error, NTSTATUS error code = 0x%x (%s)\n"), dwErrorCode, strErrorText);
+		}
+		else
+		{
+			tstring tstrErrorText = NdisStatus2Message(dwErrorCode);
+			if (tstrErrorText != _T(""))
+			{
+				_tprintf(_T("Error: makeOIDRequest::My_PacketRequest error, NTSTATUS error code = 0x%x (%s)\n"), dwErrorCode, tstrErrorText.c_str());
+			}
+			else
+			{
+				_tprintf(_T("Error: makeOIDRequest::My_PacketRequest error, NTSTATUS error code = 0x%x (NULL)\n%s0x%x or find its definition in your ndis.h if you installed WDK.\n"), dwErrorCode,
+					_T("The error message can't be found, please google the error code: "), dwErrorCode);
+			}
+		}
+
+		// Free the buffer allocated by the system.
+		LocalFree(strErrorText);
+		FreeLibrary(hModule);
 	}
 	else
 	{
@@ -615,12 +791,18 @@ BOOL SetCurrentFrequency(tstring strGUID, ULONG ulFrequency)
 	return bResult;
 }
 
+typedef struct _MY_DOT11_SUPPORTED_PHY_TYPES {
+	ULONG uNumOfEntries;
+	ULONG uTotalNumOfEntries;
+	DOT11_PHY_TYPE dot11PHYType[64];
+} MY_DOT11_SUPPORTED_PHY_TYPES, *PMY_DOT11_SUPPORTED_PHY_TYPES;
+
 BOOL GetSupportedPhyTypes(tstring strGUID, vector<tstring> &nstrPhyTypes)
 {
 	BOOL bResult;
-	DOT11_SUPPORTED_PHY_TYPES SupportedPhyTypes;
+	MY_DOT11_SUPPORTED_PHY_TYPES SupportedPhyTypes;
 
-	bResult = makeOIDRequest(strGUID, OID_DOT11_SUPPORTED_PHY_TYPES, FALSE, &SupportedPhyTypes, sizeof(DOT11_SUPPORTED_PHY_TYPES));
+	bResult = makeOIDRequest(strGUID, OID_DOT11_SUPPORTED_PHY_TYPES, FALSE, &SupportedPhyTypes, sizeof(MY_DOT11_SUPPORTED_PHY_TYPES));
 	if (bResult)
 	{
 		nstrPhyTypes.clear();
@@ -634,44 +816,53 @@ BOOL GetSupportedPhyTypes(tstring strGUID, vector<tstring> &nstrPhyTypes)
 	return bResult;
 }
 
+typedef struct MY_DOT11_PHY_ID_LIST {
+	NDIS_OBJECT_HEADER Header;
+	ULONG uNumOfEntries;
+	ULONG uTotalNumOfEntries;
+	ULONG dot11PhyId[64];
+} MY_DOT11_PHY_ID_LIST, *PMY_DOT11_PHY_ID_LIST;
+
 BOOL GetDesiredPhyList(tstring strGUID, vector<tstring> &nstrPhyList)
 {
 	BOOL bResult;
-	DOT11_PHY_ID_LIST DesiredPhyList;
+	MY_DOT11_PHY_ID_LIST DesiredPhyList;
 
-	if (g_nstrPhyTypes.size() == 0)
-	{
-		GetSupportedPhyTypes(strGUID, g_nstrPhyTypes);
-	}
+// 	if (g_nstrPhyTypes.size() == 0)
+// 	{
+// 		GetSupportedPhyTypes(strGUID, g_nstrPhyTypes);
+// 	}
 
-	bResult = makeOIDRequest(strGUID, OID_DOT11_DESIRED_PHY_LIST, FALSE, &DesiredPhyList, sizeof(DOT11_PHY_ID_LIST));
+	bResult = makeOIDRequest(strGUID, OID_DOT11_DESIRED_PHY_LIST, FALSE, &DesiredPhyList, sizeof(MY_DOT11_PHY_ID_LIST));
 	if (bResult)
 	{
 		nstrPhyList.clear();
 		for (size_t i = 0; i < DesiredPhyList.uNumOfEntries; i++)
 		{
 			
-			nstrPhyList.push_back(itos(DesiredPhyList.dot11PhyId[i]));
+			nstrPhyList.push_back(PhyType2String(DesiredPhyList.dot11PhyId[i]));
 		}
 	}
 
 	return bResult;
 }
 
-BOOL GetCurrentPhyID(tstring strGUID, ULONG &ulPhyID)
+BOOL GetCurrentPhyID(tstring strGUID, tstring &strPhyID)
 {
 	BOOL bResult;
-	ULONG CurrentPhyID;
+	ULONG CurrentPhyID = 0x0fffffff;
 
 	bResult = makeOIDRequest(strGUID, OID_DOT11_CURRENT_PHY_ID, FALSE, &CurrentPhyID, sizeof(ULONG));
-	if (bResult)
-	{
-		ulPhyID = CurrentPhyID;
-	}
-	else
-	{
-		ulPhyID = (ULONG)-1;
-	}
+	strPhyID = PhyType2String(CurrentPhyID);
+	return bResult;
+}
 
+BOOL SetCurrentPhyID(tstring strGUID, tstring strPhyID)
+{
+	BOOL bResult;
+	ULONG ulPhyID;
+
+	ulPhyID = String2PhyType(strPhyID);
+	bResult = makeOIDRequest(strGUID, OID_DOT11_CURRENT_PHY_ID, TRUE, &ulPhyID, sizeof(ULONG));
 	return bResult;
 }

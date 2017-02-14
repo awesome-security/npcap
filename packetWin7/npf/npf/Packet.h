@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
  * Copyright (c) 1999 - 2005 NetGroup, Politecnico di Torino (Italy)
  * Copyright (c) 2005 - 2010 CACE Technologies, Davis (California)
@@ -56,14 +104,6 @@
 #endif //HAVE_BUGGY_TME_SUPPORT
 
 
-//
-// Needed to disable a warning due to the #pragma prefast directives,
-// that are ignored by the normal DDK compiler
-//
-#ifndef _PREFAST_
-#pragma warning(disable:4068)
-#endif
-
 #include "win_bpf.h"
 
 #define FILTER_ACQUIRE_LOCK(_pLock, DispatchLevel) NdisAcquireSpinLock(_pLock)
@@ -74,10 +114,9 @@ typedef struct _NDIS_OID_REQUEST *FILTER_REQUEST_CONTEXT,**PFILTER_REQUEST_CONTE
 //
 // Global variables
 //
-extern NDIS_HANDLE         FilterDriverHandle; // NDIS handle for filter driver
 extern NDIS_HANDLE         FilterDriverObject;
 
-#define  MAX_REQUESTS   128 ///< Maximum number of simultaneous IOCTL requests.
+#define  MAX_REQUESTS						128 ///< Maximum number of simultaneous IOCTL requests.
 
 #define Packet_ALIGNMENT sizeof(int) ///< Alignment macro. Defines the alignment size.
 #define Packet_WORDALIGN(x) (((x)+(Packet_ALIGNMENT-1))&~(Packet_ALIGNMENT-1))	///< Alignment macro. Rounds up to the next
@@ -85,42 +124,63 @@ extern NDIS_HANDLE         FilterDriverObject;
 
 
 // Working modes
-#define MODE_CAPT 0x0		///< Capture working mode
-#define MODE_STAT 0x1		///< Statistical working mode
-#define MODE_MON  0x2		///< Kernel monitoring mode
-#define MODE_DUMP 0x10		///< Kernel dump working mode
+#define MODE_CAPT							0x0		///< Capture working mode
+#define MODE_STAT							0x1		///< Statistical working mode
+#define MODE_MON							0x2		///< Kernel monitoring mode
+#define MODE_DUMP							0x10		///< Kernel dump working mode
 
 
 #define IMMEDIATE 1			///< Immediate timeout. Forces a read call to return immediately.
 
-#define NDIS_FLAGS_SKIP_LOOPBACK_W2K	0x400 ///< This is an undocumented flag for NdisSetPacketFlags() that allows to disable loopback reception.
+#define NDIS_FLAGS_SKIP_LOOPBACK_W2K		0x400 ///< This is an undocumented flag for NdisSetPacketFlags() that allows to disable loopback reception.
 
 // The following definitions are used to provide compatibility
 // of the dump files with the ones of libpcap
-#define TCPDUMP_MAGIC		0xa1b2c3d4	///< Libpcap magic number. Used by programs like tcpdump to recognize a driver's generated dump file.
-#define PCAP_VERSION_MAJOR	2			///< Major libpcap version of the dump file. Used by programs like tcpdump to recognize a driver's generated dump file.
-#define PCAP_VERSION_MINOR	4			///< Minor libpcap version of the dump file. Used by programs like tcpdump to recognize a driver's generated dump file.
+#define TCPDUMP_MAGIC						0xa1b2c3d4	///< Libpcap magic number. Used by programs like tcpdump to recognize a driver's generated dump file.
+#define PCAP_VERSION_MAJOR					2			///< Major libpcap version of the dump file. Used by programs like tcpdump to recognize a driver's generated dump file.
+#define PCAP_VERSION_MINOR					4			///< Minor libpcap version of the dump file. Used by programs like tcpdump to recognize a driver's generated dump file.
 
 // Loopback behaviour definitions
-#define NPF_DISABLE_LOOPBACK	1	///< Tells the driver to drop the packets sent by itself. This is usefult when building applications like bridges.
-#define NPF_ENABLE_LOOPBACK		2	///< Tells the driver to capture the packets sent by itself.
+#define NPF_DISABLE_LOOPBACK				1	///< Tells the driver to drop the packets sent by itself. This is usefult when building applications like bridges.
+#define NPF_ENABLE_LOOPBACK					2	///< Tells the driver to capture the packets sent by itself.
 
 // Admin only mode definition
 //#define NPF_ADMIN_ONLY_MODE			///< Tells the driver to restrict its access only to Administrators. This is used to support "Admin-only Mode" for Npcap.
 
 // Loopback interface MTU definition
-#define NPF_LOOPBACK_INTERFACR_MTU		65536	///< The MTU of the "Npcap Loopback Adapter", this value adopts Linux's "lo" MTU and can't be modified.
+#define NPF_LOOPBACK_INTERFACR_MTU			65536	///< The MTU of the "Npcap Loopback Adapter", this value adopts Linux's "lo" MTU and can't be modified.
 
 // Custom link type, originally defined in Packet32.h, NDIS doesn't provide an equivalent for some of values
-#define NdisMediumNull					-1		///< The link type of the "Npcap Loopback Adapter", this value will be recognized by packet.dll code.
-#define NdisMediumCHDLC					-2		///< Custom linktype: NDIS doesn't provide an equivalent
-#define NdisMediumPPPSerial				-3		///< Custom linktype: NDIS doesn't provide an equivalent
-#define NdisMediumBare80211				-4		///< The link type of the Native WiFi adapters, Npcap versions with Native WiFi feature enabled will support this value.
-#define NdisMediumRadio80211			-5		///< Custom linktype: NDIS doesn't provide an equivalent
-#define NdisMediumPpi					-6		///< Custom linktype: NDIS doesn't provide an equivalent
+#define NdisMediumNull						-1		///< The link type of the "Npcap Loopback Adapter", this value will be recognized by packet.dll code.
+#define NdisMediumCHDLC						-2		///< Custom linktype: NDIS doesn't provide an equivalent
+#define NdisMediumPPPSerial					-3		///< Custom linktype: NDIS doesn't provide an equivalent
+#define NdisMediumBare80211					-4		///< The link type of the Native WiFi adapters, Npcap versions with Native WiFi feature enabled will support this value.
+#define NdisMediumRadio80211				-5		///< Custom linktype: NDIS doesn't provide an equivalent
+#define NdisMediumPpi						-6		///< Custom linktype: NDIS doesn't provide an equivalent
 
 // Maximum CPU core number, the original value is sizeof(KAFFINITY) * 8, but Amazon instance can return 128 cores, so we make NPF_MAX_CPU_NUMBER to 256 for safe.
-#define NPF_MAX_CPU_NUMBER		sizeof(KAFFINITY) * 32
+#define NPF_MAX_CPU_NUMBER					sizeof(KAFFINITY) * 32
+
+// The length of the adapter name
+#define ADAPTER_NAME_SIZE					(sizeof("\\Device\\{754FC84C-EFBC-4443-B479-2EFAE01DC7BF}") - 1)
+
+// The GUID for the filters
+#ifdef NPF_NPCAP_RUN_IN_WINPCAP_MODE
+#define				FILTER_UNIQUE_NAME			L"{7daf2ac8-e9f6-4765-a842-f1f5d2501340}"
+#define				FILTER_UNIQUE_NAME_WIFI		L"{7daf2ac8-e9f6-4765-a842-f1f5d2501350}"
+#else
+#define				FILTER_UNIQUE_NAME			L"{7daf2ac8-e9f6-4765-a842-f1f5d2501341}"
+#define				FILTER_UNIQUE_NAME_WIFI		L"{7daf2ac8-e9f6-4765-a842-f1f5d2501351}"
+#endif
+
+#define SECOND_LAST_HEX_INDEX_OF_FILTER_UNIQUE_NAME		(ADAPTER_NAME_SIZE - (sizeof("\\Device\\") - 1) + 1 + (sizeof(FILTER_UNIQUE_NAME) - 2) / sizeof(WCHAR) - 3)
+
+// The length of the adapter name with the separator ";"
+// An example is: \Device\{754FC84C-EFBC-4443-B479-2EFAE01DC7BF};
+#define ADAPTER_NAME_SIZE_WITH_SEPARATOR	(ADAPTER_NAME_SIZE + 1)
+
+// Maximum pool size allowed in bytes (defence against bad BIOCSETBUFFERSIZE calls)
+#define NPF_MAX_BUFFER_SIZE 0x40000000L
 
 /*!
   \brief Header of a libpcap dump file.
@@ -225,6 +285,7 @@ typedef struct _DEVICE_EXTENSION
 {
 	NDIS_STRING	AdapterName;			///< Name of the adapter.
 	PWSTR		ExportString;			///< Name of the exported device, i.e. name that the applications will use
+	BOOLEAN		Dot11;					///< whether the adapter is a raw 802.11 adapter or not.
 										///< to open this adapter through WinPcap.
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION;
 
@@ -284,9 +345,12 @@ typedef struct _OPEN_INSTANCE
 	struct _OPEN_INSTANCE	*Next;
 	struct _OPEN_INSTANCE	*GroupNext;
 	struct _OPEN_INSTANCE	*GroupHead;
+
 	ULONG					MyPacketFilter;
 	ULONG					HigherPacketFilter;
+	ULONG					PhysicalMedium;
 #ifdef HAVE_DOT11_SUPPORT
+	BOOLEAN					Dot11;
 	ULONG					Dot11PacketFilter;
 #endif
 
@@ -446,12 +510,13 @@ FILTER_SET_OPTIONS NPF_RegisterOptions;
 
   Function called by NDIS when a new adapter is installed on the machine With Plug and Play.
 */
-NDIS_STATUS
-NPF_AttachAdapter(
-	NDIS_HANDLE                     NdisFilterHandle,
-	NDIS_HANDLE                     FilterDriverContext,
-	PNDIS_FILTER_ATTACH_PARAMETERS  AttachParameters
-	);
+FILTER_ATTACH NPF_AttachAdapter;
+// NDIS_STATUS
+// NPF_AttachAdapter(
+// 	NDIS_HANDLE                     NdisFilterHandle,
+// 	NDIS_HANDLE                     FilterDriverContext,
+// 	PNDIS_FILTER_ATTACH_PARAMETERS  AttachParameters
+// 	);
 
 
 /*!
@@ -463,10 +528,11 @@ NPF_AttachAdapter(
   associated with it. It also releases the waiting user-level app and closes the dump thread if the instance
   is in dump mode.
 */
-VOID
-NPF_DetachAdapter(
-	NDIS_HANDLE     FilterModuleContext
-	);
+FILTER_DETACH NPF_DetachAdapter;
+// VOID
+// NPF_DetachAdapter(
+// 	NDIS_HANDLE     FilterModuleContext
+// 	);
 
 
 /*!
@@ -477,10 +543,11 @@ NPF_DetachAdapter(
   delete the devices and deregisters the filter. The driver can be unloaded by the user stopping the NPF
   service (from control panel or with a console 'net stop npf').
 */
-VOID
-NPF_Unload(
-	IN PDRIVER_OBJECT DriverObject
-	);
+DRIVER_UNLOAD NPF_Unload;
+// VOID
+// NPF_Unload(
+// 	IN PDRIVER_OBJECT DriverObject
+// 	);
 
 
 /*!
@@ -492,11 +559,12 @@ NPF_Unload(
 
   Start the datapath - begin sending and receiving NBLs.
 */
-NDIS_STATUS
-NPF_Restart(
-	NDIS_HANDLE                     FilterModuleContext,
-	PNDIS_FILTER_RESTART_PARAMETERS RestartParameters
-	);
+FILTER_RESTART NPF_Restart;
+// NDIS_STATUS
+// NPF_Restart(
+// 	NDIS_HANDLE                     FilterModuleContext,
+// 	PNDIS_FILTER_RESTART_PARAMETERS RestartParameters
+// 	);
 
 /*!
   \brief Filter pause routine, Callback for NDIS PauseHandler.
@@ -514,11 +582,12 @@ NPF_Restart(
    receive packets, but it may still process OID requests and status
    indications.
 */
-NDIS_STATUS
-NPF_Pause(
-	NDIS_HANDLE                     FilterModuleContext,
-	PNDIS_FILTER_PAUSE_PARAMETERS   PauseParameters
-	);
+FILTER_PAUSE NPF_Pause;
+// NDIS_STATUS
+// NPF_Pause(
+// 	NDIS_HANDLE                     FilterModuleContext,
+// 	PNDIS_FILTER_PAUSE_PARAMETERS   PauseParameters
+// 	);
 
 
 FILTER_OID_REQUEST NPF_OidRequest;
@@ -530,11 +599,12 @@ FILTER_OID_REQUEST_COMPLETE NPF_OidRequestComplete;
 /*!
   \brief Callback for NDIS StatusHandler. Not used by NPF
 */
-VOID
-NPF_Status(
-	NDIS_HANDLE             FilterModuleContext,
-	PNDIS_STATUS_INDICATION StatusIndication
-	);
+FILTER_STATUS NPF_Status;
+// VOID
+// NPF_Status(
+// 	NDIS_HANDLE             FilterModuleContext,
+// 	PNDIS_STATUS_INDICATION StatusIndication
+// 	);
 
 
 /*!
@@ -544,11 +614,12 @@ NPF_Status(
 
   Callback for NDIS DevicePnPEventNotifyHandler. Not used by NPF
 */
-VOID
-NPF_DevicePnPEventNotify(
-	NDIS_HANDLE             FilterModuleContext,
-	PNET_DEVICE_PNP_EVENT   NetDevicePnPEvent
-	);
+FILTER_DEVICE_PNP_EVENT_NOTIFY NPF_DevicePnPEventNotify;
+// VOID
+// NPF_DevicePnPEventNotify(
+// 	NDIS_HANDLE             FilterModuleContext,
+// 	PNET_DEVICE_PNP_EVENT   NetDevicePnPEvent
+// 	);
 
 
 /*!
@@ -559,11 +630,12 @@ NPF_DevicePnPEventNotify(
 
   Callback for NDIS NetPnPEventHandler. Not used by NPF
 */
-NDIS_STATUS
-NPF_NetPnPEvent(
-	NDIS_HANDLE					FilterModuleContext,
-	PNET_PNP_EVENT_NOTIFICATION NetPnPEventNotification
-	);
+FILTER_NET_PNP_EVENT NPF_NetPnPEvent;
+// NDIS_STATUS
+// NPF_NetPnPEvent(
+// 	NDIS_HANDLE					FilterModuleContext,
+// 	PNET_PNP_EVENT_NOTIFICATION NetPnPEventNotification
+// 	);
 
 
 /*!
@@ -580,13 +652,14 @@ NPF_NetPnPEvent(
   driver in the stack.  A filter that doesn't provide a FilerSendNetBufferList
   handler can not originate a send on its own.
 */
-VOID
-NPF_SendEx(
-	NDIS_HANDLE         FilterModuleContext,
-	PNET_BUFFER_LIST    NetBufferLists,
-	NDIS_PORT_NUMBER    PortNumber,
-	ULONG               SendFlags
-	);
+FILTER_SEND_NET_BUFFER_LISTS NPF_SendEx;
+// VOID
+// NPF_SendEx(
+// 	NDIS_HANDLE         FilterModuleContext,
+// 	PNET_BUFFER_LIST    NetBufferLists,
+// 	NDIS_PORT_NUMBER    PortNumber,
+// 	ULONG               SendFlags
+// 	);
 
 
 /*!
@@ -605,12 +678,13 @@ NPF_SendEx(
   provide a FilterReturnNetBufferLists handler cannot originate a receive indication
   on its own.
 */
-VOID
-NPF_ReturnEx(
-	NDIS_HANDLE         FilterModuleContext,
-	PNET_BUFFER_LIST    NetBufferLists,
-	ULONG               ReturnFlags
-	);
+FILTER_RETURN_NET_BUFFER_LISTS NPF_ReturnEx;
+// VOID
+// NPF_ReturnEx(
+// 	NDIS_HANDLE         FilterModuleContext,
+// 	PNET_BUFFER_LIST    NetBufferLists,
+// 	ULONG               ReturnFlags
+// 	);
 
 /*!
   \brief Function to free the Net Buffer Lists initiated by ourself.
@@ -632,12 +706,13 @@ NPF_FreePackets(
   routine.  NDIS will pass along send packets on behalf of your filter more
   efficiently than the filter can.
 */
-VOID
-NPF_SendCompleteEx(
-	NDIS_HANDLE         FilterModuleContext,
-	PNET_BUFFER_LIST    NetBufferLists,
-	ULONG               SendCompleteFlags
-	);
+FILTER_SEND_NET_BUFFER_LISTS_COMPLETE NPF_SendCompleteEx;
+// VOID
+// NPF_SendCompleteEx(
+// 	NDIS_HANDLE         FilterModuleContext,
+// 	PNET_BUFFER_LIST    NetBufferLists,
+// 	ULONG               SendCompleteFlags
+// 	);
 
 
 /*!
@@ -661,14 +736,15 @@ NPF_SendCompleteEx(
   This controls whether the receive indication is an synchronous or
   asynchronous function call.
 */
-VOID
-NPF_TapEx(
-	NDIS_HANDLE         FilterModuleContext,
-	PNET_BUFFER_LIST    NetBufferLists,
-	NDIS_PORT_NUMBER    PortNumber,
-	ULONG               NumberOfNetBufferLists,
-	ULONG               ReceiveFlags
-	);
+FILTER_RECEIVE_NET_BUFFER_LISTS NPF_TapEx;
+// VOID
+// NPF_TapEx(
+// 	NDIS_HANDLE         FilterModuleContext,
+// 	PNET_BUFFER_LIST    NetBufferLists,
+// 	NDIS_PORT_NUMBER    PortNumber,
+// 	ULONG               NumberOfNetBufferLists,
+// 	ULONG               ReceiveFlags
+// 	);
 
 
 /*!
@@ -681,11 +757,12 @@ NPF_TapEx(
   If your driver does not queue any send NBLs, you may omit this routine.
   NDIS will propagate the cancelation on your behalf more efficiently.
 */
-VOID
-NPF_CancelSendNetBufferLists(
-	NDIS_HANDLE             FilterModuleContext,
-	PVOID                   CancelId
-	);
+FILTER_CANCEL_SEND_NET_BUFFER_LISTS NPF_CancelSendNetBufferLists;
+// VOID
+// NPF_CancelSendNetBufferLists(
+// 	NDIS_HANDLE             FilterModuleContext,
+// 	PVOID                   CancelId
+// 	);
 
 
 /*!
@@ -697,9 +774,23 @@ NPF_CancelSendNetBufferLists(
 
   This function set the optional handlers for the filter. Not used by NPF
 */
-NDIS_STATUS
-	NPF_SetModuleOptions(
-	NDIS_HANDLE             FilterModuleContext
+FILTER_SET_MODULE_OPTIONS NPF_SetModuleOptions;
+// NDIS_STATUS
+// 	NPF_SetModuleOptions(
+// 	NDIS_HANDLE             FilterModuleContext
+// 	);
+
+/*!
+\brief Get the physical medium of the adapter.
+\param FilterModuleContext Pointer to the filter context structure.
+\return the physical medium.
+
+This function is used to get the original adapter physical medium with
+a NPF_AttachAdapter().
+*/
+ULONG
+NPF_GetPhysicalMedium(
+	NDIS_HANDLE FilterModuleContext
 	);
 
 /*!
@@ -784,6 +875,24 @@ NPF_InternalRequestComplete(
 
 
 /*!
+  \brief Returns the maximum number of processors in the machine.
+  \return A ULONG value for the maximum number of processors of the machine.
+*/
+ULONG
+My_NdisGroupMaxProcessorCount(
+);
+
+
+/*!
+\brief Returns the processor number of the logical processor that the caller is running on.
+\return A ULONG value for the system-wide processor index of the logical processor that the caller is running on.
+*/
+ULONG
+My_KeGetCurrentProcessorNumber(
+);
+
+
+/*!
   \brief The initialization routine of the driver.
   \param DriverObject The driver object of NPF created by the system.
   \param RegistryPath The registry path containing the keys related to the driver.
@@ -795,10 +904,24 @@ NPF_InternalRequestComplete(
   performing all the allocations and the setup. In particular, DriverEntry registers all the driver's I/O
   callbacks, creates the devices, defines NPF as a protocol inside NDIS.
 */
-NTSTATUS
-DriverEntry(
-	IN PDRIVER_OBJECT DriverObject,
-	IN PUNICODE_STRING RegistryPath
+DRIVER_INITIALIZE DriverEntry;
+// NTSTATUS
+// DriverEntry(
+// 	IN PDRIVER_OBJECT DriverObject,
+// 	IN PUNICODE_STRING RegistryPath
+// 	);
+
+
+/*!
+  \brief The initialization routine of the LWF data structure.
+  \param pFChars The LWF data structure.
+  \param bWiFiOrNot Whether the LWF is registered as a WiFi one or standard one.
+  \return NULL
+*/
+VOID
+NPF_registerLWF(
+	PNDIS_FILTER_DRIVER_CHARACTERISTICS pFChars,
+	BOOLEAN bWiFiOrNot
 	);
 
 
@@ -837,7 +960,6 @@ NPF_GetRegistryOption_Integer(
 	PUNICODE_STRING RegValueName
 	);
 
-#ifdef HAVE_WFP_LOOPBACK_SUPPORT
 /*!
   \brief read Npcap software's registry, get the loopback adapter's device name and then put the name into global variable: g_LoopbackAdapterName. This name will be check in NPF_CreateDevice() function.
 
@@ -846,7 +968,6 @@ NPF_GetRegistryOption_Integer(
 VOID
 NPF_GetRegistryOption_String(
 	);
-#endif
 
 /*!
   \brief Creates a device for a given MAC.
@@ -860,8 +981,10 @@ NPF_GetRegistryOption_String(
 */
 BOOLEAN
 NPF_CreateDevice(
-	IN OUT PDRIVER_OBJECT adriverObjectP,
-	IN PUNICODE_STRING amacNameP
+	IN OUT PDRIVER_OBJECT DriverObject,
+	IN PUNICODE_STRING AdapterName,
+	IN PUNICODE_STRING NPF_Prefix,
+	IN BOOLEAN Dot11
 	);
 
 
@@ -876,11 +999,13 @@ NPF_CreateDevice(
   and buffers needed by the new instance, fills the OPEN_INSTANCE structure associated with it and opens the
   adapter with a call to NdisOpenAdapter.
 */
-NTSTATUS
-NPF_OpenAdapter(
-	IN PDEVICE_OBJECT DeviceObject,
-	IN PIRP Irp
-	);
+_Dispatch_type_(IRP_MJ_CREATE)
+DRIVER_DISPATCH NPF_OpenAdapter;
+// NTSTATUS
+// NPF_OpenAdapter(
+// 	IN PDEVICE_OBJECT DeviceObject,
+// 	IN PIRP Irp
+// 	);
 
 
 /*!
@@ -894,27 +1019,13 @@ NPF_OpenAdapter(
   It stops the capture/monitoring/dump process, deallocates the memory and the objects associated with the
   instance and closing the files. The network adapter is then closed with a call to NdisCloseAdapter.
 */
-NTSTATUS
-NPF_Cleanup(
-	IN PDEVICE_OBJECT DeviceObject,
-	IN PIRP Irp
-	);
-
-
-/*!
-  \brief Close an instance of the driver by NPF itself
-  \param Open Pointer to open context structure
-  \return The status of the operation. See ntstatus.h in the DDK.
-
-  This function is called by NPF_RemoveUnclosedAdapters().
-  Used together with NPF_CloseAdapterForUnclosed().
-  It stops the capture/monitoring/dump process, deallocates the memory and the objects associated with the
-  instance and closing the files. The network adapter is then closed with a call to NdisCloseAdapter.
-*/
-NTSTATUS
-NPF_CleanupForUnclosed(
-	POPEN_INSTANCE Open
-);
+_Dispatch_type_(IRP_MJ_CLEANUP)
+DRIVER_DISPATCH NPF_Cleanup;
+// NTSTATUS
+// NPF_Cleanup(
+// 	IN PDEVICE_OBJECT DeviceObject,
+// 	IN PIRP Irp
+// 	);
 
 
 /*!
@@ -928,28 +1039,13 @@ NPF_CleanupForUnclosed(
   It stops the capture/monitoring/dump process, deallocates the memory and the objects associated with the
   instance and closing the files. The network adapter is then closed with a call to NdisCloseAdapter.
 */
-NTSTATUS
-NPF_CloseAdapter(
-	IN PDEVICE_OBJECT DeviceObject,
-	IN PIRP Irp
-	);
-
-
-/*!
-  \brief Closes an instance of the driver.
-  \param DeviceObject Pointer to the device object utilized by the user.
-  \param Irp Pointer to the IRP containing the user request.
-  \return The status of the operation. See ntstatus.h in the DDK.
-
-  This function is called by NPF_RemoveUnclosedAdapters().
-  Used together with NPF_CleanupForUnclosed().
-  It stops the capture/monitoring/dump process, deallocates the memory and the objects associated with the
-  instance and closing the files. The network adapter is then closed with a call to NdisCloseAdapter.
-*/
-NTSTATUS
-NPF_CloseAdapterForUnclosed(
-	POPEN_INSTANCE pOpen
-	);
+_Dispatch_type_(IRP_MJ_CLOSE)
+DRIVER_DISPATCH NPF_CloseAdapter;
+// NTSTATUS
+// NPF_CloseAdapter(
+// 	IN PDEVICE_OBJECT DeviceObject,
+// 	IN PIRP Irp
+// 	);
 
 
 /*!
@@ -993,11 +1089,14 @@ NPF_TapExForEachOpen(
   -	#BIOCSENDPACKETSSYNC
   -	#BIOCSENDPACKETSNOSYNC
 */
-NTSTATUS
-NPF_IoControl(
-	IN PDEVICE_OBJECT DeviceObject,
-	IN PIRP Irp
-);
+_Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
+_IRQL_requires_max_(PASSIVE_LEVEL)
+DRIVER_DISPATCH NPF_IoControl;
+// NTSTATUS
+// NPF_IoControl(
+// 	IN PDEVICE_OBJECT DeviceObject,
+// 	IN PIRP Irp
+// );
 
 
 /*!
@@ -1012,11 +1111,13 @@ NPF_IoControl(
   associated with Irp indicates the number of copies of the packet that will be sent: more than one copy of the
   packet can be sent for performance reasons.
 */
-NTSTATUS
-NPF_Write(
-	IN PDEVICE_OBJECT DeviceObject,
-	IN PIRP Irp
-	);
+_Dispatch_type_(IRP_MJ_WRITE)
+DRIVER_DISPATCH NPF_Write;
+// NTSTATUS
+// NPF_Write(
+// 	IN PDEVICE_OBJECT DeviceObject,
+// 	IN PIRP Irp
+// 	);
 
 
 /*!
@@ -1125,11 +1226,13 @@ NPF_StatusComplete(
   - If the instance is in statistical mode or in dump mode, the application's request is blocked until the
   timeout kept in OPEN_INSTANCE::TimeOut expires.
 */
-NTSTATUS
-NPF_Read(
-	IN PDEVICE_OBJECT DeviceObject,
-	IN PIRP Irp
-	);
+_Dispatch_type_(IRP_MJ_READ)
+DRIVER_DISPATCH NPF_Read;
+// NTSTATUS
+// NPF_Read(
+// 	IN PDEVICE_OBJECT DeviceObject,
+// 	IN PIRP Irp
+// 	);
 
 
 /*!
@@ -1158,7 +1261,8 @@ NPF_AddToOpenArray(
 */
 void
 NPF_AddToGroupOpenArray(
-	POPEN_INSTANCE Open
+	POPEN_INSTANCE Open,
+	POPEN_INSTANCE GroupHead
 	);
 
 
@@ -1214,19 +1318,9 @@ NPF_EqualAdapterName(
   This function is used to create a group member adapter for the group head one.
 */
 POPEN_INSTANCE
-NPF_GetCopyFromOpenArray(
+NPF_GetOpenByAdapterName(
 	PNDIS_STRING pAdapterName,
-	PDEVICE_EXTENSION DeviceExtension
-	);
-
-
-/*!
-  \brief Check whether there are still unclosed open instances and close them if any.
-
-  This function is used by NPF_DetachAdapter().
-*/
-void
-NPF_RemoveUnclosedAdapters(
+	BOOLEAN Dot11
 	);
 
 
@@ -1330,8 +1424,6 @@ BOOLEAN NPF_StartUsingBinding(IN POPEN_INSTANCE pOpen);
 VOID NPF_StopUsingBinding(IN POPEN_INSTANCE pOpen);
 
 VOID NPF_CloseBinding(IN POPEN_INSTANCE pOpen);
-
-VOID NPF_CloseBindingAndAdapter(IN POPEN_INSTANCE pOpen);
 
 BOOLEAN NPF_StartUsingOpenInstance(IN POPEN_INSTANCE pOpen);
 

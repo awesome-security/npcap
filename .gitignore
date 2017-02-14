@@ -1,3 +1,4 @@
+*~
 *.ncb
 *.suo
 *.sdf
@@ -27,19 +28,33 @@ Win7 Debug/
 Win7 Release/
 Win7 Debug(*)/
 Win7 Release(*)/
+Win7 Release SDV/
 Win7DebugAdmin-onlyMode/
 Win7ReleaseAdmin-onlyMode/
 sdv/
-/installer/vista/
-/installer/vista_winpcap/
-/installer/win7/
-/installer/win7_winpcap/
-/installer/win8_above/
-/installer/win8_above_winpcap/
+build.err
+build.log
+msbuild.log
+runsdvui.cmd
+SDV-default.xml
+sdv-user.sdv
+sdv-map.h
+staticdv.job
+StaticDVTrace.log
+npcap.res
+/installer/win10/
+/installer/win10_winpcap/
+/installer/win8_below/
+/installer/win8_below_winpcap/
+/installer/disk1/
+/installer/setup.inf
+/installer/setup.rpt
+/npcap-sdk/
+/dox/prj/
 /packetWin7/Dll/Project/Debug*/
 /packetWin7/Dll/Project/Release*/
 /packetWin7/Dll/Project/x64/Debug*/
 /packetWin7/Dll/Project/x64/Release*/
-/wpcap/PRJ/Debug*/
-/wpcap/PRJ/Release*/
+/wpcap/libpcap/Win32/Prj/Debug*/
+/wpcap/libpcap/Win32/Prj/Release*/
 *.VC.opendb

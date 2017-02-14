@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 // WlanHelper.cpp : Defines the entry point for the console application.
 //
 
@@ -274,7 +322,7 @@ int MainInteractive()
 				WlanFreeMemory(pOperationMode);
 			}
 
-			_tprintf(_T("%d. %s\n\tName: %s\n\tDescription: %S\n\tState: %S\n\tOperation Mode: %S\n"),
+			_tprintf(_T("%d. %s\n\tName: %s\n\tDescription: %s\n\tState: %s\n\tOperation Mode: %s\n"),
 				i,
 				strGuid,
 				getAdapterNameFromGuid((TCHAR*) strGuid).c_str(),
@@ -406,7 +454,16 @@ BOOL GetWlanOperationMode(tstring strGUID, tstring &strMode)
 	DWORD dwResult = GetInterface(wlan_intf_opcode_current_operation_mode, (PVOID*)&pOperationMode, &ChoiceGUID);
 	if (dwResult != ERROR_SUCCESS)
 	{
-		_tprintf(_T("Error: GetWlanOperationMode::GetInterface error, error code = %d\n"), dwResult);
+		LPTSTR strErrorText = NULL;
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM,
+			NULL, dwResult, 0, (PTSTR)&strErrorText, 0, NULL);
+		if (strErrorText[_tcslen(strErrorText) - 2] == _T('\r') && strErrorText[_tcslen(strErrorText) - 1] == _T('\n'))
+		{
+			strErrorText[_tcslen(strErrorText) - 2] = 0x0;
+			strErrorText[_tcslen(strErrorText) - 1] = 0x0;
+		}
+
+		_tprintf(_T("Error: GetWlanOperationMode::GetInterface error, error code = %d (%s)\n"), dwResult, strErrorText);
 		return FALSE;
 	}
 	else
@@ -441,7 +498,16 @@ BOOL SetWlanOperationMode(tstring strGUID, tstring strMode)
 	DWORD dwResult = SetInterface(wlan_intf_opcode_current_operation_mode, (PVOID*)&ulOperationMode, &ChoiceGUID);
 	if (dwResult != ERROR_SUCCESS)
 	{
-		_tprintf(_T("Error: SetWlanOperationMode::SetInterface error, error code = %d\n"), dwResult);
+		LPTSTR strErrorText = NULL;
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM,
+			NULL, dwResult, 0, (PTSTR)&strErrorText, 0, NULL);
+		if (strErrorText[_tcslen(strErrorText) - 2] == _T('\r') && strErrorText[_tcslen(strErrorText) - 1] == _T('\n'))
+		{
+			strErrorText[_tcslen(strErrorText) - 2] = 0x0;
+			strErrorText[_tcslen(strErrorText) - 1] = 0x0;
+		}
+
+		_tprintf(_T("Error: SetWlanOperationMode::SetInterface error, error code = %d (%s)\n"), dwResult, strErrorText);
 		return FALSE;
 	}
 	else
@@ -451,32 +517,49 @@ BOOL SetWlanOperationMode(tstring strGUID, tstring strMode)
 }
 
 #define STR_COMMAND_USAGE \
-_T("WlanHelper for Npcap ") _T(WINPCAP_VER_STRING) _T(" (http://npcap.org)\n")\
-_T("Usage: WlanHelper {Interface Name or GUID} [Options]\n")\
-_T("Options:\n")\
-_T("  mode: get interface operation mode\n")\
-_T("  mode <managed|monitor|master|wfd_device|wfd_owner|wfd_client>: set interface operation mode\n")\
-_T("  modes: get all operation modes supported by the interface, comma-separated\n")\
-_T("  channel: get interface channel\n")\
-_T("  channel <VALUE>: set interface channel (only works in monitor mode)\n")\
-_T("  freq: get interface frequency\n")\
-_T("  freq <VALUE>: set interface frequency (only works in monitor mode)\n")\
+_T("WlanHelper for Npcap ") _T(WINPCAP_VER_STRING) _T(" ( http://npcap.org )\n")\
+_T("Usage: WlanHelper [Commands]\n")\
+_T("   or: WlanHelper {Interface Name or GUID} [Options]\n")\
 _T("\n")\
-_T("Operation Modes:\n")\
-_T("  managed - the Extensible Station (ExtSTA) operation mode\n")\
-_T("  monitor - the Network Monitor (NetMon) operation mode\n")\
-_T("  master - the Extensible Access Point (ExtAP) operation mode (supported on Windows 7 and later)\n")\
-_T("  wfd_device - the Wi-Fi Direct Device operation mode (supported on Windows 8 and later)\n")\
-_T("  wfd_owner - the Wi-Fi Direct Group Owner operation mode (supported on Windows 8 and later)\n")\
-_T("  wfd_client - the Wi-Fi Direct Client operation mode (supported on Windows 8 and later)\n")\
+_T("OPTIONS:\n")\
+_T("  mode\t\t\t\t\t: Get interface operation mode\n")\
+_T("  mode <managed|monitor|master|..>\t: Set interface operation mode\n")\
+_T("  modes\t\t\t\t\t: Get all operation modes supported by the interface, comma-separated\n")\
+_T("  channel\t\t\t\t: Get interface channel\n")\
+_T("  channel <1-14>\t\t\t: Set interface channel (only works in monitor mode)\n")\
+_T("  freq\t\t\t\t\t: Get interface frequency\n")\
+_T("  freq <VALUE>\t\t\t\t: Set interface frequency (only works in monitor mode)\n")\
+_T("  modu\t\t\t\t\t: Get interface modulation\n")\
+_T("  modu <dsss|fhss|irbaseband|ofdm|hrdsss|erp|ht|vht|ihv (VALUE)|..>\t: Set interface modulation\n")\
+_T("  modus\t\t\t\t\t: Get all modulations supported by the interface, comma-separated\n")\
 _T("\n")\
-_T("Examples:\n")\
-_T("  WlanHelper wi-fi mode\n")\
+_T("COMMANDS:\n")\
+_T("  -i\t\t\t\t\t: Enter the interactive mode\n")\
+_T("  -h\t\t\t\t\t: Print this help summary page\n")\
+_T("\n")\
+_T("OPERATION MODES:\n")\
+_T("  managed\t: The Extensible Station (ExtSTA) operation mode\n")\
+_T("  monitor\t: The Network Monitor (NetMon) operation mode\n")\
+_T("  master\t: The Extensible Access Point (ExtAP) operation mode (supported from Windows 7 and later)\n")\
+_T("  wfd_device\t: The Wi-Fi Direct Device operation mode (supported from Windows 8 and later)\n")\
+_T("  wfd_owner\t: The Wi-Fi Direct Group Owner operation mode (supported from Windows 8 and later)\n")\
+_T("  wfd_client\t: The Wi-Fi Direct Client operation mode (supported from Windows 8 and later)\n")\
+_T("\n")\
+_T("802.11 MODULATIONS (https://en.wikipedia.org/wiki/IEEE_802.11):\n")\
+_T("  802.11-1997\t: dsss, fhss\n")\
+_T("  802.11a\t: ofdm\n")\
+_T("  802.11b\t: dsss\n")\
+_T("  802.11g\t: ofdm\n")\
+_T("  802.11n\t: mimo-ofdm\n")\
+_T("  802.11ac\t: mimo-ofdm\n")\
+_T("\n")\
+_T("EXAMPLES:\n")\
+_T("  WlanHelper Wi-Fi mode\n")\
 _T("  WlanHelper 42dfd47a-2764-43ac-b58e-3df569c447da channel 11\n")\
 _T("  WlanHelper 42dfd47a-2764-43ac-b58e-3df569c447da freq 2\n")\
 _T("  WlanHelper \"Wireless Network Connection\" mode monitor\n")\
 _T("\n")\
-_T("See the MAN Page (https://github.com/nmap/npcap) for more options and examples\n")
+_T("SEE THE MAN PAGE (https://github.com/nmap/npcap) FOR MORE OPTIONS AND EXAMPLES\n")
 
 #define STR_INVALID_PARAMETER _T("Error: invalid parameter, type in \"WlanHelper -h\" for help.\n")
 
@@ -491,8 +574,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	
 	if (argc == 1)
 	{
-		_tprintf(_T("WlanHelper [Interactive Mode]:\n****************************************************\n"));
-		return MainInteractive();
+		_tprintf(STR_COMMAND_USAGE);
+		return -1;
 	}
 	else if (argc == 2)
 	{
@@ -500,6 +583,11 @@ int _tmain(int argc, _TCHAR* argv[])
 		{
 			_tprintf(STR_COMMAND_USAGE);
 			return -1;
+		}
+		else if (strArgs[1] == _T("-i"))
+		{
+			_tprintf(_T("WlanHelper [Interactive Mode]:\n****************************************************\n"));
+			return MainInteractive();
 		}
 		else
 		{
@@ -609,10 +697,10 @@ int _tmain(int argc, _TCHAR* argv[])
 		}
 		else if (strArgs[2] == _T("modu"))
 		{
-			ULONG ulPhyID;
+			tstring ulPhyID;
 			if (GetCurrentPhyID(getGuidFromAdapterName_Wrapper(strArgs[1]), ulPhyID))
 			{
-				_tprintf(_T("%u\n"), ulPhyID);
+				_tprintf(_T("%s\n"), ulPhyID.c_str());
 				return 0;
 			}
 			else
@@ -660,6 +748,19 @@ int _tmain(int argc, _TCHAR* argv[])
 		{
 			int ulFrequency = _ttoi(strArgs[3].c_str());
 			if (SetCurrentFrequency(getGuidFromAdapterName_Wrapper(strArgs[1]), ulFrequency))
+			{
+				_tprintf(_T("Success\n"));
+				return 0;
+			}
+			else
+			{
+				_tprintf(_T("Failure\n"));
+				return -1;
+			}
+		}
+		else if (strArgs[2] == _T("modu"))
+		{
+			if (SetCurrentPhyID(getGuidFromAdapterName_Wrapper(strArgs[1]), strArgs[3]))
 			{
 				_tprintf(_T("Success\n"));
 				return 0;

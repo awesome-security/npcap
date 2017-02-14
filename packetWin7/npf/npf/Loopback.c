@@ -1,8 +1,52 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
-* Copyright (c) 1997 - 2015
-* Nmap.org (U.S.)
-* All rights reserved.
-*
 * Loopback.c
 *
 * Abstract:
@@ -10,31 +54,6 @@
 * throughout loopback packets capturing.
 *
 * This code is based on Microsoft WFP Network Inspect sample.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions
-* are met:
-*
-* 1. Redistributions of source code must retain the above copyright
-* notice, this list of conditions and the following disclaimer.
-* 2. Redistributions in binary form must reproduce the above copyright
-* notice, this list of conditions and the following disclaimer in the
-* documentation and/or other materials provided with the distribution.
-* 3. Neither the name of the Politecnico di Torino nor the names of its
-* contributors may be used to endorse or promote products derived from
-* this software without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-* "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-* LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-* A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-* OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-* SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-* DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-* THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *
 */
 
@@ -58,6 +77,7 @@ extern ULONG g_DltNullMode;
 // Callout and sublayer GUIDs
 //
 
+#ifdef NPF_NPCAP_RUN_IN_WINPCAP_MODE
 // 2D605B3E-C244-4364-86E8-BD81E6C91B6D
 DEFINE_GUID(
 	NPF_OUTBOUND_IPPACKET_CALLOUT_V4,
@@ -99,6 +119,49 @@ DEFINE_GUID(
 	0x469b,
 	0xb9, 0x9b, 0x3e, 0x88, 0x10, 0x27, 0x5a, 0x71
 	);
+#else
+// 2D605B3E-C244-4364-86E8-BD81E6C91B6E
+DEFINE_GUID(
+	NPF_OUTBOUND_IPPACKET_CALLOUT_V4,
+	0x2d605b3e,
+	0xc244,
+	0x4364,
+	0x86, 0xe8, 0xbd, 0x81, 0xe6, 0xc9, 0x1b, 0x6e
+);
+// F935E4CD-9499-4934-824D-8E3726BA4A94
+DEFINE_GUID(
+	NPF_OUTBOUND_IPPACKET_CALLOUT_V6,
+	0xf935e4cd,
+	0x9499,
+	0x4934,
+	0x82, 0x4d, 0x8e, 0x37, 0x26, 0xba, 0x4a, 0x94
+);
+// ED7E5EB2-6B09-4783-961C-5495EAAD361F
+DEFINE_GUID(
+	NPF_INBOUND_IPPACKET_CALLOUT_V4,
+	0xed7e5eb2,
+	0x6b09,
+	0x4783,
+	0x96, 0x1c, 0x54, 0x95, 0xea, 0xad, 0x36, 0x1f
+);
+// 21022F40-9578-4C39-98A5-C97B8D834E28
+DEFINE_GUID(
+	NPF_INBOUND_IPPACKET_CALLOUT_V6,
+	0x21022f40,
+	0x9578,
+	0x4c39,
+	0x98, 0xa5, 0xc9, 0x7b, 0x8d, 0x83, 0x4e, 0x28
+);
+
+// 2F32C254-A054-469B-B99B-3E8810275A72
+DEFINE_GUID(
+	NPF_SUBLAYER,
+	0x2f32c254,
+	0xa054,
+	0x469b,
+	0xb9, 0x9b, 0x3e, 0x88, 0x10, 0x27, 0x5a, 0x72
+);
+#endif
 
 
 // 
@@ -113,18 +176,20 @@ UINT32 g_InboundIPPacketV6 = 0;
 HANDLE g_InjectionHandle_IPv4 = INVALID_HANDLE_VALUE;
 HANDLE g_InjectionHandle_IPv6 = INVALID_HANDLE_VALUE;
 
-
+_Success_(return)
 BOOLEAN
 NPF_IsPacketSelfSent(
 	_In_ PNET_BUFFER_LIST pNetBufferList,
-	_In_ BOOLEAN bIPv4
+	_In_ BOOLEAN bIPv4,
+	_Out_ BOOLEAN *pbInnerIPv4,
+	_Out_ UCHAR *puProto
 	)
 {
 	NTSTATUS			status = STATUS_SUCCESS;
 	NET_BUFFER*			pNetBuffer = 0;
 	PVOID				pContiguousData = NULL;
 	UCHAR				pPacketData[IPV6_HDR_LEN];
-	UCHAR				iProtocol;
+	UCHAR				uProto;
 
 	TRACE_ENTER();
 
@@ -149,8 +214,67 @@ NPF_IsPacketSelfSent(
 		}
 		else
 		{
-			iProtocol = bIPv4 ? ((PIP_HEADER) pContiguousData)->ip_Protocol : ((PIP6_HEADER) pContiguousData)->ip6_CTL.ip6_HeaderCtl.ip6_NextHeader;
-			if (iProtocol == IPPROTO_NPCAP_LOOPBACK)
+			uProto = bIPv4 ? ((PIP_HEADER) pContiguousData)->ip_Protocol : ((PIP6_HEADER) pContiguousData)->ip6_CTL.ip6_HeaderCtl.ip6_NextHeader;
+			*puProto = uProto;
+			if (uProto == IPPROTO_NPCAP_LOOPBACK)
+			{
+				*pbInnerIPv4 = bIPv4;
+				TRACE_EXIT();
+				return TRUE;
+			}
+			else
+			{
+				TRACE_EXIT();
+				return FALSE;
+			}
+		}
+
+		pNetBuffer = pNetBuffer->Next;
+	}
+
+	TRACE_EXIT();
+	return FALSE;
+}
+
+BOOLEAN
+NPF_IsICMPProtocolUnreachablePacket(
+	_In_ PNET_BUFFER_LIST pNetBufferList
+)
+{
+	NTSTATUS			status = STATUS_SUCCESS;
+	NET_BUFFER*			pNetBuffer = 0;
+	PVOID				pContiguousData = NULL;
+	UCHAR				pPacketData[IP_HDR_LEN + ICMP_HDR_LEN];
+	PIP_HEADER			pIPHeader;
+	PICMP4_HEADER		pICMPHeader;
+
+	TRACE_ENTER();
+
+	pNetBuffer = NET_BUFFER_LIST_FIRST_NB(pNetBufferList);
+	while (pNetBuffer)
+	{
+		pContiguousData = NdisGetDataBuffer(pNetBuffer,
+			IP_HDR_LEN + ICMP_HDR_LEN,
+			pPacketData,
+			1,
+			0);
+		if (!pContiguousData)
+		{
+			status = STATUS_UNSUCCESSFUL;
+
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+				"NPF_IsICMPProtocolUnreachablePacket: NdisGetDataBuffer() [status: %#x]\n",
+				status);
+
+			TRACE_EXIT();
+			return FALSE;
+		}
+		else
+		{
+			pIPHeader = (PIP_HEADER)pContiguousData;
+			pICMPHeader = (PICMP4_HEADER)((PUCHAR)pContiguousData + IP_HDR_LEN);
+			if (((*((PUCHAR)(&pIPHeader->ip_Src)) == 0x7F && *((PUCHAR)(&pIPHeader->ip_Dst)) == 0x7F) || (pIPHeader->ip_Src == pIPHeader->ip_Dst)) &&
+				pICMPHeader->icmp_Type == ICMP_TYPE_DEST_UNREACH && pICMPHeader->icmp_Code == ICMP_CODE_PROT_UNREACH)
 			{
 				TRACE_EXIT();
 				return TRUE;
@@ -238,9 +362,12 @@ NPF_NetworkClassify(
 	UINT32				ipHeaderSize = 0;
 	UINT32				bytesRetreated = 0;
 	UINT32				bytesRetreatedEthernet = 0;
-	INT32				iIPv4 = -1;
-	INT32				iDrection = -1;
+	BOOLEAN				bIPv4;
+	BOOLEAN				bInnerIPv4;
+	BOOLEAN				bInbound;
 	BOOLEAN				bSelfSent = FALSE;
+	UCHAR				uIPProto;
+	BOOLEAN				bICMPProtocolUnreachable = FALSE;
 	PVOID				pContiguousData = NULL;
 	NET_BUFFER*			pNetBuffer = 0;
 	UCHAR				pPacketData[ETHER_HDR_LEN];
@@ -263,7 +390,7 @@ NPF_NetworkClassify(
 	{
 		return;
 	}
-#if(NTDDI_VERSION >= NTDDI_WIN7)
+#if(NTDDI_VERSION >= NTDDI_VISTASP1)
 	if (inMetaValues->currentMetadataValues & FWP_CONDITION_FLAG_IS_REASSEMBLED)
 	{
 		return;
@@ -275,19 +402,32 @@ NPF_NetworkClassify(
 	// Get the packet protocol (IPv4 or IPv6) and the direction (Inbound or Outbound).
 	if (inFixedValues->layerId == FWPS_LAYER_OUTBOUND_IPPACKET_V4 || inFixedValues->layerId == FWPS_LAYER_INBOUND_IPPACKET_V4)
 	{
-		iIPv4 = 1;
+		bIPv4 = TRUE;
 	}
-	else // if (inFixedValues->layerId == FWPS_LAYER_OUTBOUND_IPPACKET_V6 || inFixedValues->layerId == FWPS_LAYER_INBOUND_IPPACKET_V6)
+	else if (inFixedValues->layerId == FWPS_LAYER_OUTBOUND_IPPACKET_V6 || inFixedValues->layerId == FWPS_LAYER_INBOUND_IPPACKET_V6)
 	{
-		iIPv4 = 0;
+		bIPv4 = FALSE;
 	}
+	else
+	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_NetworkClassify: bIPv4 cannot be determined, inFixedValues->layerId = %d\n", inFixedValues->layerId);
+		bIPv4 = FALSE;
+	}
+
 	if (inFixedValues->layerId == FWPS_LAYER_OUTBOUND_IPPACKET_V4 || inFixedValues->layerId == FWPS_LAYER_OUTBOUND_IPPACKET_V6)
 	{
-		iDrection = 0;
+		bInbound = FALSE;
 	}
-	else // if (inFixedValues->layerId == FWPS_LAYER_INBOUND_IPPACKET_V4 || inFixedValues->layerId == FWPS_LAYER_INBOUND_IPPACKET_V6)
+	else if (inFixedValues->layerId == FWPS_LAYER_INBOUND_IPPACKET_V4 || inFixedValues->layerId == FWPS_LAYER_INBOUND_IPPACKET_V6)
 	{
-		iDrection = 1;
+		bInbound = TRUE;
+	}
+	else
+	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_NetworkClassify: bInbound cannot be determined, inFixedValues->layerId = %d\n", inFixedValues->layerId);
+		bInbound = FALSE;
 	}
 
 	if (inMetaValues->currentMetadataValues & FWPS_METADATA_FIELD_IP_HEADER_SIZE)
@@ -295,7 +435,7 @@ NPF_NetworkClassify(
 		ipHeaderSize = inMetaValues->ipHeaderSize;
 	}
 
-	injectionState = FwpsQueryPacketInjectionState(iIPv4 ? g_InjectionHandle_IPv4 : g_InjectionHandle_IPv6,
+	injectionState = FwpsQueryPacketInjectionState(bIPv4 ? g_InjectionHandle_IPv4 : g_InjectionHandle_IPv6,
 		pNetBufferList,
 		NULL);
 	if (injectionState == FWPS_PACKET_INJECTED_BY_SELF ||
@@ -312,7 +452,7 @@ NPF_NetworkClassify(
 	// Outbound: Initial offset is at the IP Header, so just retreat the size of the Ethernet Header.
 	// We retreated the packet in two phases: 1) retreat the IP Header (if has), 2) clone the packet and retreat the Ethernet Header.
 	// We must NOT retreat the Ethernet Header on the original packet, or this will lead to BAD_POOL_CALLER Bluescreen.
-	bytesRetreated = iDrection ? ipHeaderSize : 0;
+	bytesRetreated = bInbound ? ipHeaderSize : 0;
 
 	status = NdisRetreatNetBufferListDataStart(pNetBufferList,
 		bytesRetreated,
@@ -330,16 +470,31 @@ NPF_NetworkClassify(
 		return;
 	}
 
-	//bSelfSent = NPF_IsPacketSelfSent(pNetBufferList, (BOOLEAN)iIPv4);
-	bSelfSent = (iDrection == 0) ? FALSE : NPF_IsPacketSelfSent(pNetBufferList, (BOOLEAN) iIPv4);
-	TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
-		"NPF_NetworkClassify: NPF_IsPacketSelfSent() [bSelfSent: %#x]\n",
-		bSelfSent);
+	TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "NPF_NetworkClassify: bIPv4 = %d, bInbound = %d\n", bIPv4, bInbound);
+	TRACE_MESSAGE4(PACKET_DEBUG_LOUD, "NPF_NetworkClassify: inFixedValues->layerId = %d, inMetaValues->currentMetadataValues = 0x%x, inMetaValues->ipHeaderSize = %d, inMetaValues->compartmentId = 0x%x\n",
+		inFixedValues->layerId, inMetaValues->currentMetadataValues, inMetaValues->ipHeaderSize, inMetaValues->compartmentId);
+
+	//bSelfSent = NPF_IsPacketSelfSent(pNetBufferList, (BOOLEAN)bIPv4);
+	bSelfSent = bInbound ? NPF_IsPacketSelfSent(pNetBufferList, bIPv4, &bInnerIPv4, &uIPProto) : FALSE;
+	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "NPF_NetworkClassify: bSelfSent = %d\n", bSelfSent);
+
+	if (bInbound && bIPv4 && !bSelfSent && uIPProto == IPPROTO_ICMP)
+	{
+		bICMPProtocolUnreachable = NPF_IsICMPProtocolUnreachablePacket(pNetBufferList);
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "NPF_NetworkClassify: bICMPProtocolUnreachable = %d\n", bICMPProtocolUnreachable);
+		if (bICMPProtocolUnreachable)
+		{
+			TRACE_MESSAGE(PACKET_DEBUG_LOUD,
+				"NPF_NetworkClassify: this packet is the ICMPv4 protocol unreachable error packet caused by our \"nping 127.0.0.1\" command, discard it\n");
+
+			goto Exit_WSK_IP_Retreated;
+		}
+	}
 
 	if (bSelfSent)
 	{
 		NdisAdvanceNetBufferListDataStart(pNetBufferList,
-			iIPv4 ? IP_HDR_LEN : IPV6_HDR_LEN,
+			bIPv4 ? IP_HDR_LEN : IPV6_HDR_LEN,
 			FALSE,
 			0);
 	}
@@ -363,7 +518,7 @@ NPF_NetworkClassify(
 			compartmentID = (COMPARTMENT_ID)inMetaValues->compartmentId;
 
 		// This cloned NBL will be freed in NPF_NetworkInjectionComplete function.
-		status = FwpsInjectNetworkSendAsync(iIPv4 ? g_InjectionHandle_IPv4 : g_InjectionHandle_IPv6,
+		status = FwpsInjectNetworkSendAsync(bInnerIPv4 ? g_InjectionHandle_IPv4 : g_InjectionHandle_IPv6,
 			NULL,
 			0,
 			compartmentID,
@@ -437,12 +592,12 @@ NPF_NetworkClassify(
 		{
 			if (g_DltNullMode)
 			{
-				((PDLT_NULL_HEADER) pContiguousData)->null_type = iIPv4 ? DLTNULLTYPE_IP : DLTNULLTYPE_IPV6;
+				((PDLT_NULL_HEADER) pContiguousData)->null_type = bIPv4 ? DLTNULLTYPE_IP : DLTNULLTYPE_IPV6;
 			}
 			else
 			{
 				RtlZeroMemory(pContiguousData, ETHER_ADDR_LEN * 2);
-				((PETHER_HEADER) pContiguousData)->ether_type = iIPv4 ? RtlUshortByteSwap(ETHERTYPE_IP) : RtlUshortByteSwap(ETHERTYPE_IPV6);
+				((PETHER_HEADER) pContiguousData)->ether_type = bIPv4 ? RtlUshortByteSwap(ETHERTYPE_IP) : RtlUshortByteSwap(ETHERTYPE_IPV6);
 			}
 		}
 
@@ -487,7 +642,7 @@ Exit_WSK_IP_Retreated:
 	if (bSelfSent)
 	{
 		status = NdisRetreatNetBufferListDataStart(pNetBufferList,
-			iIPv4 ? IP_HDR_LEN : IPV6_HDR_LEN,
+			bIPv4 ? IP_HDR_LEN : IPV6_HDR_LEN,
 			0,
 			NULL,
 			NULL);
@@ -507,30 +662,6 @@ Exit_WSK_IP_Retreated:
 		bytesRetreated,
 		FALSE,
 		0);
-
-// 	// print "protocol, direction, fragment, reassembled" info for the current packet.
-// 
-// 	int iFragment = -1;
-// 	if (inMetaValues->currentMetadataValues & FWPS_METADATA_FIELD_FRAGMENT_DATA)
-// 	{
-// 		iFragment = 1;
-// 	}
-// 	else
-// 	{
-// 		iFragment = 0;
-// 	}
-// 
-// 	int iReassembled = -1;
-// 	if (inMetaValues->currentMetadataValues & FWP_CONDITION_FLAG_IS_REASSEMBLED)
-// 	{
-// 		iReassembled = 1;
-// 	}
-// 	else
-// 	{
-// 		iReassembled = 0;
-// 	}
-// 	IF_LOUD(DbgPrint("\n\nNPF_NetworkClassify: Loopback packet found !!! protocol=[%d] (ipv4=0, ipv6=1), direction=[%d] (out=0, in=1), fragment=[%d], reassembled=[%d]\n", iProtocol, iDrection, iFragment, iReassembled);)
-
 
 	TRACE_EXIT();
 	return;
@@ -603,7 +734,7 @@ NPF_AddFilter(
 		filterConditions[conditionIndex].conditionValue.uint32 = FWP_CONDITION_FLAG_IS_FRAGMENT;
 		conditionIndex++;
 	}
-#if(NTDDI_VERSION >= NTDDI_WIN7)
+#if(NTDDI_VERSION >= NTDDI_VISTASP1)
 	else if (iFlag == 2)
 	{
 		filter.action.type = FWP_ACTION_PERMIT;
@@ -636,6 +767,9 @@ NPF_AddFilter(
 	// 	}
 	else
 	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_AddFilter: invalid iFlag, iFlag = %d\n",
+			iFlag);
 		TRACE_EXIT();
 		return status;
 	}
@@ -692,6 +826,9 @@ FWPM_LAYER_OUTBOUND_IPPACKET_V4_DISCARD
 		);
 	if (!NT_SUCCESS(status))
 	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_RegisterCallout: FwpsCalloutRegister() [status: %#x]\n",
+			status);
 		goto Exit;
 	}
 	calloutRegistered = TRUE;
@@ -711,30 +848,45 @@ FWPM_LAYER_OUTBOUND_IPPACKET_V4_DISCARD
 		);
 	if (!NT_SUCCESS(status))
 	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_RegisterCallout: FwpmCalloutAdd() [status: %#x]\n",
+			status);
 		goto Exit;
 	}
 
 	status = NPF_AddFilter(layerKey, calloutKey, 0);
 	if (!NT_SUCCESS(status))
 	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_RegisterCallout: NPF_AddFilter() [status: %#x]\n",
+			status);
 		goto Exit;
 	}
 
 	status = NPF_AddFilter(layerKey, calloutKey, 1);
 	if (!NT_SUCCESS(status))
 	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_RegisterCallout: NPF_AddFilter() [status: %#x]\n",
+			status);
 		goto Exit;
 	}
-#if(NTDDI_VERSION >= NTDDI_WIN7)
+#if(NTDDI_VERSION >= NTDDI_VISTASP1)
 	status = NPF_AddFilter(layerKey, calloutKey, 2);
 	if (!NT_SUCCESS(status))
 	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_RegisterCallout: NPF_AddFilter() [status: %#x]\n",
+			status);
 		goto Exit;
 	}
 #endif
 	status = NPF_AddFilter(layerKey, calloutKey, 3);
 	if (!NT_SUCCESS(status))
 	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_RegisterCallout: NPF_AddFilter() [status: %#x]\n",
+			status);
 		goto Exit;
 	}
 

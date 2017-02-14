@@ -1,6 +1,52 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*++
-
-Copyright (c) Nmap.org.  All rights reserved.
 
 Module Name:
 
@@ -25,6 +71,8 @@ Abstract:
 #include "LoopbackRename.h"
 #include "RegUtil.h"
 
+#include "debug.h"
+
 #define			NPCAP_LOOPBACK_ADAPTER_NAME				NPF_DRIVER_NAME_NORMAL_WIDECHAR L" Loopback Adapter"
 #define			NPCAP_LOOPBACK_APP_NAME					NPF_DRIVER_NAME_NORMAL_WIDECHAR L"_Loopback"
 
@@ -40,17 +88,25 @@ public:
 
 COM::COM()
 {
+	TRACE_ENTER();
+
 	HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
 	if(!SUCCEEDED(hr))
 	{
-		_tprintf(_T("ERROR: CoInitializeEx() failed. Error code: 0x%08x\n"), hr);
+		TRACE_PRINT1("CoInitializeEx: error, errCode = 0x%08x.", hr);
 	}
+
+	TRACE_EXIT();
 }
 
 COM::~COM()
 {
+	TRACE_ENTER();
+
 	CoUninitialize();
+
+	TRACE_EXIT();
 }
 
 // RAII helper class
@@ -71,13 +127,15 @@ public:
 
 NetCfg::NetCfg() : m_pINetCfg(0)
 {
+	TRACE_ENTER();
+
 	HRESULT hr = S_OK;
 
 	hr = m_pINetCfg.CoCreateInstance(CLSID_CNetCfg);
 
 	if(!SUCCEEDED(hr))
 	{
-		_tprintf(_T("ERROR: CoCreateInstance() failed. Error code: 0x%08x\n"), hr);
+		TRACE_PRINT1("INetCfg::CoCreateInstance: error, errCode = 0x%08x.", hr);
 		throw 1;
 	}
 
@@ -85,7 +143,7 @@ NetCfg::NetCfg() : m_pINetCfg(0)
 
 	if (!SUCCEEDED(hr))
 	{
-		_tprintf(_T("QueryInterface(INetCfgLock) 0x%08x\n"), hr);
+		TRACE_PRINT1("INetCfg::QueryInterface: error, errCode = 0x%08x.", hr);
 		throw 2;
 	}
 
@@ -93,7 +151,7 @@ NetCfg::NetCfg() : m_pINetCfg(0)
 	hr = m_pLock->AcquireWriteLock(INFINITE, NPCAP_LOOPBACK_APP_NAME, NULL);
 	if (!SUCCEEDED(hr))
 	{
-		_tprintf(_T("INetCfgLock::AcquireWriteLock 0x%08x\n"), hr);
+		TRACE_PRINT1("INetCfgLock::AcquireWriteLock: error, errCode = 0x%08x.", hr);
 		throw 3;
 	}
 
@@ -101,13 +159,17 @@ NetCfg::NetCfg() : m_pINetCfg(0)
 
 	if(!SUCCEEDED(hr))
 	{
-		_tprintf(_T("ERROR: Initialize() failed. Error code: 0x%08x\n"), hr);
+		TRACE_PRINT1("INetCfg::Initialize: error, errCode = 0x%08x.", hr);
 		throw 4;
 	}
+
+	TRACE_EXIT();
 }
 
 NetCfg::~NetCfg()
-{  
+{
+	TRACE_ENTER();
+
 	HRESULT hr = S_OK;
 
 	if(m_pINetCfg)
@@ -115,19 +177,23 @@ NetCfg::~NetCfg()
 		hr = m_pINetCfg->Uninitialize();
 		if(!SUCCEEDED(hr))
 		{
-			_tprintf(_T("ERROR: Uninitialize() failed. Error code: 0x%08x\n"), hr);
+			TRACE_PRINT1("INetCfg::Uninitialize: error, errCode = 0x%08x.", hr);
 		}
 
 		hr = m_pLock->ReleaseWriteLock();
 		if (!SUCCEEDED(hr))
 		{
-			_tprintf(_T("INetCfgLock::ReleaseWriteLock 0x%08x\n"), hr);
+			TRACE_PRINT1("INetCfgLock::ReleaseWriteLock: error, errCode = 0x%08x.", hr);
 		}
 	}
+
+	TRACE_EXIT();
 }
 
 BOOL EnumerateComponents(CComPtr<INetCfg>& pINetCfg, const GUID* pguidClass)
 {
+	TRACE_ENTER();
+
 	/*	cout << "\n\nEnumerating " << GUID2Str(pguidClass) << " class:\n" << endl;*/
 
 	// IEnumNetCfgComponent provides methods that enumerate the INetCfgComponent interfaces 
@@ -140,7 +206,7 @@ BOOL EnumerateComponents(CComPtr<INetCfg>& pINetCfg, const GUID* pguidClass)
 
 	if(!SUCCEEDED(hr))
 	{
-		_tprintf(_T("ERROR: Failed to get IEnumNetCfgComponent interface pointer\n"));
+		TRACE_PRINT1("INetCfg::EnumComponents: error, errCode = 0x%08x.", hr);
 		throw 1;
 	} 
 
@@ -197,19 +263,24 @@ BOOL EnumerateComponents(CComPtr<INetCfg>& pINetCfg, const GUID* pguidClass)
 //		wcout << L"\tPNP Device Node ID: " << wstring(pszPndDevNodeId) << L'\n';
 
 		int iDevID = getIntDevID(pszPndDevNodeId);
+		TRACE_PRINT4("INetCfgComponent::GetPnpDevNodeId: executing, pszPndDevNodeId = %s, iDevID = %d, g_NpcapAdapterID = %d, pszBindName = %ws.",
+			pszPndDevNodeId, iDevID, g_NpcapAdapterID, pszBindName);
 		if (g_NpcapAdapterID == iDevID)
 		{
 			bFound = TRUE;
 
+			TRACE_PRINT2("INetCfgComponent::SetDisplayName: executing, g_NpcapAdapterID = iDevID = %d, pszBindName = %ws.", g_NpcapAdapterID, pszBindName);
 			hr = pINetCfgComponent->SetDisplayName(NPCAP_LOOPBACK_ADAPTER_NAME);
 
 			if (hr != S_OK)
 			{
+				TRACE_PRINT1("INetCfgComponent::SetDisplayName: error, errCode = 0x%08x.", hr);
 				bFailed = TRUE;
 			}
 
 			if (!AddFlagToRegistry(pszBindName))
 			{
+				TRACE_PRINT1("AddFlagToRegistry: error, pszBindName = %ws.", pszBindName);
 				bFailed = TRUE;
 			}
 
@@ -220,6 +291,7 @@ BOOL EnumerateComponents(CComPtr<INetCfg>& pINetCfg, const GUID* pguidClass)
 
 			if (!RenameLoopbackNetwork(pszBindName))
 			{
+				TRACE_PRINT1("RenameLoopbackNetwork: error, pszBindName = %ws.", pszBindName);
 				bFailed = TRUE;
 			}
 		}
@@ -230,45 +302,55 @@ BOOL EnumerateComponents(CComPtr<INetCfg>& pINetCfg, const GUID* pguidClass)
 
 		if (bFound)
 		{
-			if (bFailed)
-			{
-				return FALSE;
-			}
-			else
-			{
-				return TRUE;
-			}
+			TRACE_EXIT();
+			return !bFailed;
 		}
 	}
 
+	TRACE_EXIT();
 	return FALSE;
 }
 
 BOOL NetCfg::GetNetworkConfiguration()
-{ 
+{
+	TRACE_ENTER();
 	// get enumeration containing GUID_DEVCLASS_NET class of network components
+	TRACE_EXIT();
 	return EnumerateComponents(m_pINetCfg, &GUID_DEVCLASS_NET);
 }
 
 int getIntDevID(TCHAR strDevID[]) //DevID is in form like: "ROOT\\NET\\0008"
 {
-	int iDevID;
-	_stscanf_s(strDevID, _T("ROOT\\NET\\%04d"), &iDevID);
+	TRACE_ENTER();
+
+	int iDevID = -1;
+	int iMatched = _stscanf_s(strDevID, _T("ROOT\\NET\\%04d"), &iDevID);
+	TRACE_PRINT2("_stscanf_s: iMatched = %d, iDevID = %d.", iMatched, iDevID);
+	if (iMatched != 1)
+		iDevID = -1;
+
+	TRACE_EXIT();
 	return iDevID;
 }
 
 BOOL AddFlagToRegistry(tstring strDeviceName)
 {
+	TRACE_ENTER();
+	TRACE_EXIT();
 	return WriteStrToRegistry(NPCAP_REG_KEY_NAME, NPCAP_REG_LOOPBACK_VALUE_NAME, tstring(_T("\\Device\\") + strDeviceName).c_str(), KEY_WRITE | KEY_WOW64_32KEY);
 }
 
 BOOL AddFlagToRegistry_Service(tstring strDeviceName)
 {
+	TRACE_ENTER();
+	TRACE_EXIT();
 	return WriteStrToRegistry(NPCAP_SERVICE_REG_KEY_NAME, NPCAP_REG_LOOPBACK_VALUE_NAME, tstring(_T("\\Device\\") + strDeviceName).c_str(), KEY_WRITE);
 }
 
 BOOL RecordLoopbackDevice(int iNpcapAdapterID)
 {
+	TRACE_ENTER();
+
 	g_NpcapAdapterID = iNpcapAdapterID;
 
 	try
@@ -277,14 +359,18 @@ BOOL RecordLoopbackDevice(int iNpcapAdapterID)
 		NetCfg netCfg;
 		if (!netCfg.GetNetworkConfiguration())
 		{
+			TRACE_PRINT("NetCfg::GetNetworkConfiguration: error.");
+			TRACE_EXIT();
 			return FALSE;
 		}
 	}
 	catch(...)
 	{
-		_tprintf(_T("ERROR: main() caught exception\n"));
+		TRACE_PRINT("NetCfg::GetNetworkConfiguration: error (exception).");
+		TRACE_EXIT();
 		return FALSE;
 	}
 
+	TRACE_EXIT();
 	return TRUE;
 }

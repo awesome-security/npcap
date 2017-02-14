@@ -1,6 +1,55 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 #include "NetCfgAPI.h"
 #include "ProtInstall.h"
 
+#include "debug.h"
 
 //+---------------------------------------------------------------------------
 //
@@ -31,13 +80,17 @@
 //    ppnc  		 [out] Reference to INetCfg.
 //    lpszLockedBy   [in]  Optional. Application who holds the write lock.
 //
-// Returns:   S_OK on sucess, otherwise an error code.
+// Returns:   S_OK on success, otherwise an error code.
 //
 // Notes:
 //
 
+extern BOOLEAN bWiFiService;
+
 HRESULT HrGetINetCfg(IN BOOL fGetWriteLock, IN LPCTSTR lpszAppName, OUT INetCfg** ppnc, OUT LPTSTR* lpszLockedBy)
 {
+	TRACE_ENTER();
+
 	INetCfg* pnc = NULL;
 	INetCfgLock* pncLock = NULL;
 	HRESULT hr = S_OK;
@@ -122,13 +175,12 @@ HRESULT HrGetINetCfg(IN BOOL fGetWriteLock, IN LPCTSTR lpszAppName, OUT INetCfg*
 			ReleaseRef(pncLock);
 			ReleaseRef(pnc);
 		}
-
-		//
-		// In case of error, uninitialize COM.
-		//
-
-		if (hr != S_OK)
+		else
 		{
+			TRACE_PRINT1("CoCreateInstance: error, hr = 0x%08x.", hr);
+			//
+			// In case of error, uninitialize COM.
+			//
 			if (selfStartedCom)
 			{
 				CoUninitialize();
@@ -136,6 +188,7 @@ HRESULT HrGetINetCfg(IN BOOL fGetWriteLock, IN LPCTSTR lpszAppName, OUT INetCfg*
 		}
 	}
 
+	TRACE_EXIT();
 	return hr;
 }
 
@@ -155,6 +208,8 @@ HRESULT HrGetINetCfg(IN BOOL fGetWriteLock, IN LPCTSTR lpszAppName, OUT INetCfg*
 
 HRESULT HrReleaseINetCfg(IN INetCfg* pnc, IN BOOL fHasWriteLock)
 {
+	TRACE_ENTER();
+
 	INetCfgLock* pncLock = NULL;
 	HRESULT hr = S_OK;
 
@@ -190,6 +245,7 @@ HRESULT HrReleaseINetCfg(IN INetCfg* pnc, IN BOOL fHasWriteLock)
 
 	CoUninitialize();
 
+	TRACE_EXIT();
 	return hr;
 }
 
@@ -210,8 +266,10 @@ HRESULT HrReleaseINetCfg(IN INetCfg* pnc, IN BOOL fHasWriteLock)
 // Notes:
 //
 
-HRESULT HrInstallNetComponent(IN INetCfg* pnc, IN LPCTSTR lpszComponentId, IN const GUID* pguidClass, IN LPCTSTR lpszInfFullPath)
+HRESULT HrInstallNetComponent(IN INetCfg* pnc, IN const GUID* pguidClass, IN LPCTSTR lpszInfFullPath)
 {
+	TRACE_ENTER();
+
 	DWORD dwError;
 	HRESULT hr = S_OK;
 	TCHAR szDrive[_MAX_DRIVE];
@@ -249,8 +307,8 @@ HRESULT HrInstallNetComponent(IN INetCfg* pnc, IN LPCTSTR lpszComponentId, IN co
 		   )
 		{
 			dwError = GetLastError();
-
 			hr = HRESULT_FROM_WIN32(dwError);
+			TRACE_PRINT1("SetupCopyOEMInfW: error, errCode = 0x%08x.", hr);
 		}
 	}
 
@@ -259,17 +317,58 @@ HRESULT HrInstallNetComponent(IN INetCfg* pnc, IN LPCTSTR lpszComponentId, IN co
 		//
 		// Install the network component.
 		//
-		hr = HrInstallComponent(pnc, lpszComponentId, pguidClass);
+		TRACE_PRINT1("bWiFiService = %d.", bWiFiService);
+		TRACE_PRINT1("HrInstallComponent: executing, szComponentId = %s.", NDISLWF_SERVICE_PNP_DEVICE_ID);
+		hr = HrInstallComponent(pnc, NDISLWF_SERVICE_PNP_DEVICE_ID, pguidClass);
 
 		if (hr == S_OK)
 		{
-			//
-			// On success, apply the changes
-			//
-			hr = pnc->Apply();
+			if (bWiFiService)
+			{
+				TRACE_PRINT1("HrInstallComponent: executing, szComponentId = %s.", NDISLWF_SERVICE_PNP_DEVICE_ID_WIFI);
+				hr = HrInstallComponent(pnc, NDISLWF_SERVICE_PNP_DEVICE_ID_WIFI, pguidClass);
+
+				if (hr == S_OK)
+				{
+					//
+					// On success, apply the changes
+					//
+					hr = pnc->Apply();
+					if (hr != S_OK)
+					{
+						TRACE_PRINT1("INetCfg::Apply: error, errCode = 0x%08x.", hr);
+					}
+				}
+				else
+				{
+					TRACE_PRINT1("HrInstallComponent: error, szComponentId = %s.", NDISLWF_SERVICE_PNP_DEVICE_ID_WIFI);
+					// at least install the first service
+					hr = pnc->Apply();
+					if (hr != S_OK)
+					{
+						TRACE_PRINT1("INetCfg::Apply: error, errCode = 0x%08x.", hr);
+					}
+				}
+			}
+			else
+			{
+				//
+				// On success, apply the changes
+				//
+				hr = pnc->Apply();
+				if (hr != S_OK)
+				{
+					TRACE_PRINT1("INetCfg::Apply: error, errCode = 0x%08x.", hr);
+				}
+			}
+		}
+		else
+		{
+			TRACE_PRINT1("HrInstallComponent: error, szComponentId = %s.", NDISLWF_SERVICE_PNP_DEVICE_ID);
 		}
 	}
 
+	TRACE_EXIT();
 	return hr;
 }
 
@@ -290,6 +389,8 @@ HRESULT HrInstallNetComponent(IN INetCfg* pnc, IN LPCTSTR lpszComponentId, IN co
 
 HRESULT HrInstallComponent(IN INetCfg* pnc, IN LPCTSTR szComponentId, IN const GUID* pguidClass)
 {
+	TRACE_ENTER();
+
 	INetCfgClassSetup* pncClassSetup = NULL;
 	INetCfgComponent* pncc = NULL;
 	OBO_TOKEN OboToken;
@@ -326,10 +427,19 @@ HRESULT HrInstallComponent(IN INetCfg* pnc, IN LPCTSTR szComponentId, IN const G
 
 			ReleaseRef(pncc);
 		}
+		else
+		{
+			TRACE_PRINT1("INetCfgClassSetup::Install: error, szComponentId = %s.", szComponentId);
+		}
 
 		ReleaseRef(pncClassSetup);
 	}
+	else
+	{
+		TRACE_PRINT1("INetCfg::QueryNetCfgClass: error, szComponentId = %s.", szComponentId);
+	}
 
+	TRACE_EXIT();
 	return hr;
 }
 
@@ -349,73 +459,94 @@ HRESULT HrInstallComponent(IN INetCfg* pnc, IN LPCTSTR szComponentId, IN const G
 
 HRESULT HrUninstallNetComponent(IN INetCfg* pnc, IN LPCTSTR szComponentId)
 {
-	INetCfgComponent* pncc = NULL;
-	INetCfgClass* pncClass = NULL;
-	INetCfgClassSetup* pncClassSetup = NULL;
-	OBO_TOKEN OboToken;
+	INetCfgComponent* pncc;
+	INetCfgClass* pncClass;
+	INetCfgClassSetup* pncClassSetup;
 	GUID guidClass;
-	HRESULT hr = S_OK;
+	OBO_TOKEN obo;
+	HRESULT hr;
+
+	TRACE_ENTER();
 
 	//
-	// OBO_TOKEN specifies on whose behalf this
-	// component is being installed.
-	// Set it to OBO_USER so that szComponentId will be installed
-	// on behalf of the user.
+	// Get a reference to the network component to uninstall.
 	//
-
-	ZeroMemory(&OboToken, sizeof(OboToken));
-	OboToken.Type = OBO_USER;
-
-	//
-	// Get the component's reference.
-	//
-
 	hr = pnc->FindComponent(szComponentId, &pncc);
 
-	if (S_OK == hr)
+	if (hr == S_OK)
 	{
 		//
-		// Get the component's class GUID.
+		// Get the class GUID.
 		//
-
 		hr = pncc->GetClassGuid(&guidClass);
 
 		if (hr == S_OK)
 		{
 			//
-			// Get component's class reference.
+			// Get a reference to component's class.
 			//
 
-			hr = pnc->QueryNetCfgClass(&guidClass, IID_INetCfgClass, (void**)&pncClass);
+			hr = pnc->QueryNetCfgClass(&guidClass, IID_INetCfgClass, (PVOID *)&pncClass);
 			if (hr == S_OK)
 			{
 				//
-				// Get Setup reference.
+				// Get the setup interface.
 				//
 
-				hr = pncClass->QueryInterface(IID_INetCfgClassSetup, (void**)&pncClassSetup);
+				hr = pncClass->QueryInterface(IID_INetCfgClassSetup, (LPVOID *)&pncClassSetup);
+
 				if (hr == S_OK)
 				{
-					hr = pncClassSetup->DeInstall(pncc, &OboToken, NULL);
-					if (hr == S_OK)
-					{
-						//
-						// Apply the changes
-						//
+					//
+					// Uninstall the component.
+					//
 
+					ZeroMemory(&obo, sizeof(OBO_TOKEN));
+
+					obo.Type = OBO_USER;
+
+					hr = pncClassSetup->DeInstall(pncc, &obo, NULL);
+					if ((hr == S_OK) || (hr == NETCFG_S_REBOOT))
+					{
 						hr = pnc->Apply();
+
+						if ((hr != S_OK) && (hr != NETCFG_S_REBOOT))
+						{
+							ErrMsg(hr, _T("Couldn't apply the changes after uninstalling %s."), szComponentId);
+						}
+					}
+					else
+					{
+						ErrMsg(hr, _T("Failed to uninstall %s."), szComponentId);
 					}
 
 					ReleaseRef(pncClassSetup);
 				}
+				else
+				{
+					ErrMsg(hr, _T("Couldn't get an interface to setup class."));
+				}
 
 				ReleaseRef(pncClass);
 			}
+			else
+			{
+				ErrMsg(hr, _T("Couldn't get a pointer to class interface of %s."), szComponentId);
+			}
+		}
+		else
+		{
+			ErrMsg(hr, _T("Couldn't get the class guid of %s."), szComponentId);
 		}
 
 		ReleaseRef(pncc);
 	}
+	else
+	{
+		ErrMsg(hr, _T("Couldn't get an interface pointer to %s."), szComponentId);
+	}
 
+	TRACE_EXIT();
 	return hr;
 }
 
@@ -442,23 +573,27 @@ VOID ReleaseRef(IN IUnknown* punk)
 	return;
 }
 
-BOOL RestartAllBindings(INetCfg *netcfg, PCWSTR name)
+BOOL RestartAllBindings(INetCfg *netcfg, PCWSTR szComponentId)
 {
 	HRESULT hr;
 	CComPtr<INetCfgComponent> comp;
 	CComPtr<INetCfgComponentBindings> bindings;
 
-	hr = netcfg->FindComponent(name, &comp);
+	TRACE_ENTER();
+
+	hr = netcfg->FindComponent(szComponentId, &comp);
 	if (FAILED(hr))
 	{
-		wprintf(L"INetCfg::FindComponent 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfg::FindComponent: error, hr = 0x%08x.", hr);
+		TRACE_EXIT();
 		return FALSE;
 	}
 
 	hr = comp.QueryInterface(&bindings);
 	if (FAILED(hr))
 	{
-		wprintf(L"QueryInterface(INetCfgComponentBindings) 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfgComponent::QueryInterface: error, hr = 0x%08x.", hr);
+		TRACE_EXIT();
 		return FALSE;
 	}
 
@@ -466,7 +601,8 @@ BOOL RestartAllBindings(INetCfg *netcfg, PCWSTR name)
 	hr = bindings->EnumBindingPaths(EBP_BELOW, &enumerator);
 	if (FAILED(hr))
 	{
-		wprintf(L"INetCfgComponentBindings::EnumBindingPaths 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfgComponentBindings::EnumBindingPaths: error, hr = 0x%08x.", hr);
+		TRACE_EXIT();
 		return FALSE;
 	}
 
@@ -482,7 +618,8 @@ BOOL RestartAllBindings(INetCfg *netcfg, PCWSTR name)
 		}
 		if (FAILED(hr))
 		{
-			wprintf(L"IEnumNetCfgBindingPath::Next 0x%08x\n", hr);
+			TRACE_PRINT1("IEnumNetCfgBindingPath::Next: error, hr = 0x%08x.", hr);
+			TRACE_EXIT();
 			return FALSE;
 		}
 
@@ -490,118 +627,131 @@ BOOL RestartAllBindings(INetCfg *netcfg, PCWSTR name)
 		hr = path->GetPathToken(&token);
 		if (FAILED(hr))
 		{
-			wprintf(L"INetCfgBindingPath::GetPathToken 0x%08x\n", hr);
+			TRACE_PRINT1("INetCfgBindingPath::GetPathToken: error, hr = 0x%08x.", hr);
+			TRACE_EXIT();
 			continue;
 		}
 
-		wprintf(L"Found binding %s\n", token);
+		TRACE_PRINT1("Found binding %ws.", token);
 		CoTaskMemFree(token);
 
 		hr = path->IsEnabled();
 		if (FAILED(hr))
 		{
-			wprintf(L"INetCfgBindingPath::IsEnabled 0x%08x\n", hr);
+			TRACE_PRINT1("INetCfgBindingPath::IsEnabled: error, hr = 0x%08x.", hr);
+			TRACE_EXIT();
 			continue;
 		}
 
 		if (S_FALSE == hr)
 		{
-			wprintf(L"\tPath is already disabled.  Skipping over it.\n");
+			TRACE_PRINT("Path is already disabled.  Skipping over it.");
+			TRACE_EXIT();
 			continue;
 		}
 
-		// Diable
+		// Disable
 
 		hr = path->Enable(FALSE);
 		if (FAILED(hr))
 		{
-			wprintf(L"INetCfgBindingPath::Enable(FALSE) 0x%8x\n", hr);
+			TRACE_PRINT1("INetCfgBindingPath::Enable(FALSE): error, hr = 0x%08x.", hr);
+			TRACE_EXIT();
 			continue;
 		}
 
 		hr = netcfg->Apply();
 		if (FAILED(hr))
 		{
-			wprintf(L"INetCfg::Apply 0x%08x\n", hr);
+			TRACE_PRINT1("INetCfg::Apply: error, hr = 0x%08x.", hr);
+			TRACE_EXIT();
 			return FALSE;
 		}
 
-		wprintf(L"\tPath disabled\n");
+		TRACE_PRINT("Path disabled.");
 
 		// Enable
 
 		hr = path->Enable(TRUE);
 		if (FAILED(hr))
 		{
-			wprintf(L"INetCfgBindingPath::Enable(TRUE) 0x%8x\n", hr);
+			TRACE_PRINT1("INetCfgBindingPath::Enable(TRUE): error, hr = 0x%08x.", hr);
+			TRACE_EXIT();
 			return FALSE;
 		}
 
 		hr = netcfg->Apply();
 		if (FAILED(hr))
 		{
-			wprintf(L"INetCfg::Apply 0x%08x\n", hr);
+			TRACE_PRINT1("INetCfg::Apply: error, hr = 0x%08x.", hr);
+			TRACE_EXIT();
 			return FALSE;
 		}
 
-		wprintf(L"\tPath enabled\n");
+		TRACE_PRINT("Path enabled.");
 	}
 
-
-
+	TRACE_EXIT();
 	return TRUE;
 }
 
-BOOL ConnectToNetCfg(PCWSTR name)
+BOOL ConnectToNetCfg(PCWSTR lpszPnpID, LPTSTR lpszAppName)
 {
 	HRESULT hr;
 	CComPtr<INetCfg> netcfg;
 	CComPtr<INetCfgLock> lock;
+
+	TRACE_ENTER();
 
 	// Before we can get started, we need to do some initialization work.
 
 	hr = netcfg.CoCreateInstance(CLSID_CNetCfg);
 	if (FAILED(hr))
 	{
-		wprintf(L"CoCreateInstance(CLSID_CNetCfg 0x%08x\n", hr);
+		TRACE_PRINT1("CoCreateInstance(CLSID_CNetCfg): error, hr = 0x%08x.", hr);
+		TRACE_EXIT();
 		return FALSE;
 	}
 
 	hr = netcfg.QueryInterface(&lock);
 	if (FAILED(hr))
 	{
-		wprintf(L"QueryInterface(INetCfgLock) 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfg::QueryInterface: error, hr = 0x%08x.", hr);
+		TRACE_EXIT();
 		return FALSE;
 	}
 
 	// Note that this call can block.
-	hr = lock->AcquireWriteLock(INFINITE, APP_NAME, NULL);
+	hr = lock->AcquireWriteLock(INFINITE, lpszAppName, NULL);
 	if (FAILED(hr))
 	{
-		wprintf(L"INetCfgLock::AcquireWriteLock 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfgLock::AcquireWriteLock: error, hr = 0x%08x.", hr);
+		TRACE_EXIT();
 		return FALSE;
 	}
 
 	hr = netcfg->Initialize(NULL);
 	if (FAILED(hr))
 	{
-		wprintf(L"INetCfg::Initialize 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfg::Initialize: error, hr = 0x%08x.", hr);
+		TRACE_EXIT();
 		return FALSE;
 	}
 
-	BOOL ok = RestartAllBindings(netcfg.p, name);
+	BOOL ok = RestartAllBindings(netcfg.p, lpszPnpID);
 
 	hr = netcfg->Uninitialize();
 	if (FAILED(hr))
 	{
-		wprintf(L"INetCfg::Uninitialize 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfg::Uninitialize: error, hr = 0x%08x.", hr);
 	}
 
 	hr = lock->ReleaseWriteLock();
 	if (FAILED(hr))
 	{
-		wprintf(L"INetCfgLock::ReleaseWriteLock 0x%08x\n", hr);
+		TRACE_PRINT1("INetCfgLock::ReleaseWriteLock: error, hr = 0x%08x.", hr);
 	}
 
+	TRACE_EXIT();
 	return ok;
 }

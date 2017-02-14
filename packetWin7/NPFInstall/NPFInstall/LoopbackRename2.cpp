@@ -1,6 +1,52 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*++
-
-Copyright (c) Nmap.org.  All rights reserved.
 
 Module Name:
 
@@ -15,24 +61,38 @@ This code is based on the Windows built-in netsh.exe tool.
 
 #include "LoopbackRename2.h"
 
-#define			NPCAP_LOOPBACK_INTERFACE_NAME_WIDECHAR		NPF_DRIVER_NAME_NORMAL_WIDECHAR L" Loopback Adapter"
+#include "debug.h"
+
+// Depress the GetVersionEx() call warning.
+#pragma warning (disable: 4996)
+
+#ifdef _UNICODE
+#define			NPCAP_LOOPBACK_INTERFACE_NAME				NPF_DRIVER_NAME_NORMAL_WIDECHAR L" Loopback Adapter"
+#else
+#define			NPCAP_LOOPBACK_INTERFACE_NAME				NPF_DRIVER_NAME_NORMAL " Loopback Adapter"
+#endif
 #define			NPCAP_LOOPBACK_INTERFACE_MTU				65536
 #define			BUF_SIZE									255
 
-vector<wstring> g_InterfaceNameList1;
-vector<wstring> g_InterfaceNameList2;
+vector<tstring> g_InterfaceNameList1;
+vector<tstring> g_InterfaceNameList2;
 
-wstring getNpcapLoopbackAdapterName()
+tstring getNpcapLoopbackAdapterName()
 {
+	TRACE_ENTER();
+
 	if (g_InterfaceNameList1.size() != g_InterfaceNameList2.size() - 1)
 	{
-		return L"";
+		TRACE_PRINT2("getNpcapLoopbackAdapterName: error, g_InterfaceNameList1.size() = %d, g_InterfaceNameList2.size() = %d.",
+			g_InterfaceNameList1.size(), g_InterfaceNameList2.size());
+		TRACE_EXIT();
+		return _T("");
 	}
 
-	for (int i = 0; i < g_InterfaceNameList2.size(); i ++)
+	for (size_t i = 0; i < g_InterfaceNameList2.size(); i ++)
 	{
 		int found = 0;
-		for (int j = 0; j < g_InterfaceNameList1.size(); j ++)
+		for (size_t j = 0; j < g_InterfaceNameList1.size(); j ++)
 		{
 			if (g_InterfaceNameList2[i].compare(g_InterfaceNameList1[j]) == 0)
 			{
@@ -42,11 +102,15 @@ wstring getNpcapLoopbackAdapterName()
 		}
 		if (found == 0)
 		{
+			TRACE_PRINT1("getNpcapLoopbackAdapterName: found the new interface, i = %d.", i);
+			TRACE_EXIT();
 			return g_InterfaceNameList2[i];
 		}
 	}
 
-	return L"";
+	TRACE_PRINT("getNpcapLoopbackAdapterName: unknown error.");
+	TRACE_EXIT();
+	return _T("");
 }
 
 wstring ANSIToUnicode(const string& str)
@@ -74,16 +138,21 @@ wstring ANSIToUnicode(const string& str)
 	return rt;
 }
 
-wstring executeCommand(wchar_t* cmd)
+tstring executeCommand(TCHAR* strCmd)
 {
+	TRACE_ENTER();
+	TRACE_PRINT1("executeCommand: executing, strCmd = %s.", strCmd);
+
+	tstring result;
 	char buffer[128];
 	string tmp = "";
-	wstring result;
 
-	FILE* pipe = _wpopen(cmd, L"r");
+	FILE* pipe = _tpopen(strCmd, _T("r"));
 	if (!pipe)
 	{
-		return L"";
+		TRACE_PRINT1("_tpopen: error, errCode = 0x%08x.", errno);
+		TRACE_EXIT();
+		return _T("");
 	}
 
 	while (!feof(pipe))
@@ -93,8 +162,14 @@ wstring executeCommand(wchar_t* cmd)
 	}
 	_pclose(pipe);
 
+#ifdef _UNICODE
 	result = ANSIToUnicode(tmp);
+#else
+	result = tmp;
+#endif
+	TRACE_PRINT1("executeCommand: result = %s.", result.c_str());
 
+	TRACE_EXIT();
 	return result;
 }
 
@@ -110,55 +185,62 @@ wstring executeCommand(wchar_t* cmd)
 // Disabled       Disconnected   Dedicated        Ethernet
 // Enabled        Connected      Dedicated        Npcap Loopback Adapter
 //
-vector<wstring> getInterfaceNamesFromNetshOutput(wstring strOutput)
+vector<tstring> getInterfaceNamesFromNetshOutput(tstring strOutput)
 {
-	vector<wstring> nResults;
+	TRACE_ENTER();
+
+	vector<tstring> nResults;
 	size_t iLineStart;
 	size_t iLineEnd = 0;
 	size_t iStringStart;
 	size_t iStringEnd;
 
-	while (iLineEnd < strOutput.length() && strOutput[iLineEnd] == L'\n')
+	while (iLineEnd < strOutput.length() && strOutput[iLineEnd] == _T('\n'))
 	{
 		iLineEnd ++;
 	}
 
-	iLineEnd = strOutput.find(L'\n', iLineEnd);
-	if (iLineEnd == wstring::npos)
+	iLineEnd = strOutput.find(_T('\n'), iLineEnd);
+	if (iLineEnd == tstring::npos)
 	{
+		TRACE_EXIT();
 		return nResults;
 	}
 	iLineEnd ++;
 
-	iLineEnd = strOutput.find(L'\n', iLineEnd);
-	if (iLineEnd == wstring::npos)
+	iLineEnd = strOutput.find(_T('\n'), iLineEnd);
+	if (iLineEnd == tstring::npos)
 	{
+		TRACE_EXIT();
 		return nResults;
 	}
 
 	iLineEnd ++;
 	iLineStart = iLineEnd;
 
-	while ((iLineEnd = strOutput.find(L'\n', iLineEnd)) != wstring::npos)
+	while ((iLineEnd = strOutput.find(_T('\n'), iLineEnd)) != tstring::npos)
 	{
 		iStringEnd = iLineEnd;
-		iStringStart = strOutput.rfind(L"    ", iLineEnd);
+		iStringStart = strOutput.rfind(_T("    "), iLineEnd);
 		if (iStringStart < iLineStart)
 		{
+			TRACE_EXIT();
 			return nResults;
 		}
 		else
 		{
-			iStringStart += wcslen(L"    ");
+			iStringStart += _tcslen(_T("    "));
 		}
 
-		wstring strInterfaceName = strOutput.substr(iStringStart, iStringEnd - iStringStart);
+		tstring strInterfaceName = strOutput.substr(iStringStart, iStringEnd - iStringStart);
+		TRACE_PRINT1("getInterfaceNamesFromNetshOutput: executing, strInterfaceName = %s.", strInterfaceName.c_str());
 		nResults.push_back(strInterfaceName);
 
 		iLineEnd ++;
 		iLineStart = iLineEnd;
 	}
 
+	TRACE_EXIT();
 	return nResults;
 }
 
@@ -171,86 +253,118 @@ vector<wstring> getInterfaceNamesFromNetshOutput(wstring strOutput)
 // Microsoft Windows [Version 10.0.10102]
 //
 // The "standard" GetWindowsVersionEx() way doesn't work out on Win10, because it returns 6.3 (Win8) on Win10.
-// wstring getMajorVersionNumberFromVerOutput(wstring strOutput)
+// tstring getMajorVersionNumberFromVerOutput(tstring strOutput)
 // {
 // 	size_t iStringStart;
 // 	size_t iStringEnd;
 //
-// 	iStringStart = strOutput.find(L"Version");
-// 	if (iStringStart == wstring::npos)
+// 	iStringStart = strOutput.find(_T("Version"));
+// 	if (iStringStart == tstring::npos)
 // 	{
-// 		return L"";
+// 		return _T("");
 // 	}
 // 	iStringStart += 8;
 //
-// 	iStringEnd = strOutput.find(L'.', iStringStart);
-// 	if (iStringEnd == wstring::npos)
+// 	iStringEnd = strOutput.find(_T('.'), iStringStart);
+// 	if (iStringEnd == tstring::npos)
 // 	{
-// 		return L"";
+// 		return _T("");
 // 	}
 //
-// 	wstring strNumber = strOutput.substr(iStringStart, iStringEnd - iStringStart);
+// 	tstring strNumber = strOutput.substr(iStringStart, iStringEnd - iStringStart);
 // 	return strNumber;
 // }
 
 void snapshotInterfaceListBeforeInstall()
 {
-	wstring cmd = executeCommand(L"netsh.exe interface show interface");
+	TRACE_ENTER();
+
+	tstring cmd = executeCommand(_T("netsh.exe interface show interface"));
 	g_InterfaceNameList1 = getInterfaceNamesFromNetshOutput(cmd);
+
+	TRACE_EXIT();
 }
 
 void snapshotInterfaceListAfterInstall()
 {
-	wstring cmd = executeCommand(L"netsh.exe interface show interface");
+	TRACE_ENTER();
+
+	tstring cmd = executeCommand(_T("netsh.exe interface show interface"));
 	g_InterfaceNameList2 = getInterfaceNamesFromNetshOutput(cmd);
+
+	TRACE_EXIT();
 }
 
 void PrepareRenameLoopbackNetwork2()
 {
+	TRACE_ENTER();
+
 	snapshotInterfaceListBeforeInstall();
+
+	TRACE_EXIT();
 }
 
-void changeLoopbackInterfaceMTU(wstring strInterfaceName)
+void changeLoopbackInterfaceMTU(tstring strInterfaceName)
 {
-	wchar_t renameCmd[MAX_PATH];
-	swprintf_s(renameCmd, MAX_PATH, L"netsh.exe interface ipv4 set subinterface \"%s\" mtu=%d store=persistent", strInterfaceName.c_str(), NPCAP_LOOPBACK_INTERFACE_MTU);
+	TRACE_ENTER();
+
+	TCHAR renameCmd[MAX_PATH];
+	_stprintf_s(renameCmd, MAX_PATH, _T("netsh.exe interface ipv4 set subinterface \"%s\" mtu=%d store=persistent"), (LPCTSTR) strInterfaceName.c_str(), NPCAP_LOOPBACK_INTERFACE_MTU);
 	executeCommand(renameCmd);
-	swprintf_s(renameCmd, MAX_PATH, L"netsh.exe interface ipv6 set subinterface \"%s\" mtu=%d store=persistent", strInterfaceName.c_str(), NPCAP_LOOPBACK_INTERFACE_MTU);
+	_stprintf_s(renameCmd, MAX_PATH, _T("netsh.exe interface ipv6 set subinterface \"%s\" mtu=%d store=persistent"), (LPCTSTR) strInterfaceName.c_str(), NPCAP_LOOPBACK_INTERFACE_MTU);
 	executeCommand(renameCmd);
+
+	TRACE_EXIT();
 }
 
-void renameLoopbackInterface(wstring strInterfaceName)
+void renameLoopbackInterface(tstring strInterfaceName)
 {
-	wchar_t renameCmd[MAX_PATH];
-	swprintf_s(renameCmd, MAX_PATH, L"netsh.exe interface set interface name=\"%s\" newname=\"%s\"", strInterfaceName.c_str(), NPCAP_LOOPBACK_INTERFACE_NAME_WIDECHAR);
+	TRACE_ENTER();
+
+	TCHAR renameCmd[MAX_PATH];
+	_stprintf_s(renameCmd, MAX_PATH, _T("netsh.exe interface set interface name=\"%s\" newname=\"%s\""), (LPCTSTR) strInterfaceName.c_str(), NPCAP_LOOPBACK_INTERFACE_NAME);
 	executeCommand(renameCmd);
+
+	TRACE_EXIT();
 }
 
 BOOL DoRenameLoopbackNetwork2()
 {
+	TRACE_ENTER();
+
 	snapshotInterfaceListAfterInstall();
-	wstring strOriginalInterfaceName = getNpcapLoopbackAdapterName();
-	if (strOriginalInterfaceName.compare(L"") == 0)
+	tstring strOriginalInterfaceName = getNpcapLoopbackAdapterName();
+	TRACE_PRINT1("getNpcapLoopbackAdapterName: executing, strOriginalInterfaceName = %s.", strOriginalInterfaceName.c_str());
+	if (strOriginalInterfaceName.compare(_T("")) == 0)
 	{
+		TRACE_PRINT("getNpcapLoopbackAdapterName: error, strOriginalInterfaceName = NULL.");
+		TRACE_EXIT();
 		return FALSE;
 	}
 
 	changeLoopbackInterfaceMTU(strOriginalInterfaceName);
 	renameLoopbackInterface(strOriginalInterfaceName);
+
+	TRACE_EXIT();
 	return TRUE;
 }
 
 BOOL IsWindowsWin10()
 {
+	TRACE_ENTER();
+
 	OSVERSIONINFO osvi;
 	ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
 	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
 	GetVersionEx(&osvi);
+
+	TRACE_PRINT1("GetVersionEx: osvi.dwMajorVersion = %d, expected value = 10.", osvi.dwMajorVersion);
+	TRACE_EXIT();
 	return osvi.dwMajorVersion >= 10;
 
-// 	wstring cmd = executeCommand(L"ver");
-// 	wstring strMajorVersionNumber = getMajorVersionNumberFromVerOutput(cmd);
-// 	if (strMajorVersionNumber.compare(L"10") == 0)
+// 	tstring cmd = executeCommand(_T("ver"));
+// 	tstring strMajorVersionNumber = getMajorVersionNumberFromVerOutput(cmd);
+// 	if (strMajorVersionNumber.compare(_T("10")) == 0)
 // 	{
 // 		return TRUE;
 // 	}

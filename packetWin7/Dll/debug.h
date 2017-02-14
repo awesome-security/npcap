@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
  * Copyright (c) 2005 - 2006
  * CACE Technologies LLC, Davis (CA)
@@ -33,17 +81,17 @@
 #ifndef __PACKET_DEBUG_393073863432093179878957
 #define __PACKET_DEBUG_393073863432093179878957
 
-#ifdef _DEBUG_TO_FILE
+#if defined(_DBG) || defined(_DEBUG_TO_FILE)
 
 #include <stdio.h>
 #include <windows.h>
 
-extern CHAR g_LogFileName[1024];
+#include <tchar.h>
 
 #pragma warning(push)
 #pragma warning(disable : 4127)
 
-static VOID OutputDebugStringVA(LPCSTR Format, ...)
+static VOID OutputDebugStringV(LPCTSTR Format, ...)
 {
 	FILE *f;											
 	SYSTEMTIME LocalTime;								
@@ -54,16 +102,18 @@ static VOID OutputDebugStringVA(LPCSTR Format, ...)
 
 	dwThreadId = GetCurrentThreadId();
 
-	va_start( Marker, Format );     /* Initialize variable arguments. */
+	va_start(Marker, Format); /* Initialize variable arguments. */
 														
 	GetLocalTime(&LocalTime);							
 														
 	do
 	{
-		
-		f = fopen(g_LogFileName, "a");
-		
-		if (f != NULL)
+
+#ifdef _CONSOLE
+		if (_tfopen_s(&f, _T("C:\\Program Files\\Npcap\\NPFInstall.log"), _T("a")) == 0)
+#else
+		if (_tfopen_s(&f, _T("C:\\Program Files\\Npcap\\Packet.log"), _T("a")) == 0)
+#endif
 			break;
 
 		Sleep(0);
@@ -77,7 +127,7 @@ static VOID OutputDebugStringVA(LPCSTR Format, ...)
 	}
 	while(1);
 
-	fprintf(f, "[%.08X] %.04u-%.02u-%.02u %.02u:%02u:%02u ",
+	_ftprintf(f, _T("[%.08X] %.04u-%.02u-%.02u %.02u:%02u:%02u "),
 			dwThreadId,
 			LocalTime.wYear,							
 			LocalTime.wMonth,							
@@ -85,7 +135,7 @@ static VOID OutputDebugStringVA(LPCSTR Format, ...)
 			LocalTime.wHour,							
 			LocalTime.wMinute,							
 			LocalTime.wSecond);										
-	vfprintf(f, Format, Marker);
+	_vftprintf(f, Format, Marker);
 	
 	fclose(f);											
 
@@ -99,34 +149,17 @@ static VOID OutputDebugStringVA(LPCSTR Format, ...)
 
 #include <strsafe.h>
 
-static VOID OutputDebugStringVA(LPCSTR Format, ...)
+static VOID OutputDebugStringV(LPCTSTR Format, ...)
 {
 	va_list Marker;
-	CHAR string[1024];
+	TCHAR string[1024];
 	DWORD dwLastError = GetLastError();
 
-	va_start( Marker, Format );     /* Initialize variable arguments. */
+	va_start(Marker, Format); /* Initialize variable arguments. */
 
-	StringCchVPrintfA(string, sizeof(string), Format, Marker);
+	StringCchVPrintf(string, sizeof(string), Format, Marker);
 
-	OutputDebugStringA(string);
-
-	va_end(Marker);
-
-	SetLastError(dwLastError);
-}
-
-static VOID OutputDebugStringVW(LPCWSTR Format, ...)
-{
-	va_list Marker;
-	wchar_t string[1024];
-	DWORD dwLastError = GetLastError();
-
-	va_start( Marker, Format );     /* Initialize variable arguments. */
-
-	StringCchVPrintfW(string, sizeof(string), Format, Marker);
-
-	OutputDebugStringW(string);
+	OutputDebugString(string);
 
 	va_end(Marker);
 
@@ -137,21 +170,15 @@ static VOID OutputDebugStringVW(LPCWSTR Format, ...)
 
 #if defined(_DBG) || defined(_DEBUG_TO_FILE)
 
-#ifdef _DBG
-#define TRACE_PRINT_DLLMAIN(_x)			OutputDebugStringVA ("    " _x "\n")
-#else
-#define TRACE_PRINT_DLLMAIN(_x)			//we cannot use the _DEBUG_TO_FILE stuff from DllMain!!
-#endif
-
-#define TRACE_ENTER(_x)					OutputDebugStringVA ("--> " _x "\n")
-#define TRACE_EXIT(_x)					OutputDebugStringVA ("<-- " _x "\n")
-#define TRACE_PRINT(_x)					OutputDebugStringVA ("    " _x "\n")
-#define TRACE_PRINT1(_x, _y)			OutputDebugStringVA("    " _x "\n", _y)   		
-#define TRACE_PRINT2(_x, _p1, _p2)		OutputDebugStringVA("    " _x "\n", _p1, _p2)   		
-#define TRACE_PRINT4(_x, _p1, _p2, _p3, _p4) OutputDebugStringVA("    " _x "\n", _p1, _p2, _p3, _p4) 
-#define TRACE_PRINT6(_x, _p1, _p2, _p3, _p4, _p5, _p6) OutputDebugStringVA("    " _x "\n", _p1, _p2, _p3, _p4, _p5, _p6 )
-
-#define TRACE_PRINT_WIDECHAR(_x)		OutputDebugStringVW (L"    %ws\n", _x)
+#define TRACE_ENTER()									OutputDebugStringV(_T("--> ") _T(__FUNCTION__) _T("\n"))
+#define TRACE_EXIT()									OutputDebugStringV(_T("<-- ") _T(__FUNCTION__) _T("\n"))
+#define TRACE_PRINT(_x)									OutputDebugStringV(_T("    ") _T(_x) _T("\n"))
+#define TRACE_PRINT1(_x, _p1)							OutputDebugStringV(_T("    ") _T(_x) _T("\n"), _p1)
+#define TRACE_PRINT2(_x, _p1, _p2)						OutputDebugStringV(_T("    ") _T(_x) _T("\n"), _p1, _p2)
+#define TRACE_PRINT3(_x, _p1, _p2, _p3)					OutputDebugStringV(_T("    ") _T(_x) _T("\n"), _p1, _p2, _p3)
+#define TRACE_PRINT4(_x, _p1, _p2, _p3, _p4)			OutputDebugStringV(_T("    ") _T(_x) _T("\n"), _p1, _p2, _p3, _p4)
+#define TRACE_PRINT5(_x, _p1, _p2, _p3, _p4, _p5)		OutputDebugStringV(_T("    ") _T(_x) _T("\n"), _p1, _p2, _p3, _p4, _p5)
+#define TRACE_PRINT6(_x, _p1, _p2, _p3, _p4, _p5, _p6)	OutputDebugStringV(_T("    ") _T(_x) _T("\n"), _p1, _p2, _p3, _p4, _p5, _p6)
 
 static __forceinline void TRACE_PRINT_OS_INFO()
 {
@@ -166,79 +193,80 @@ static __forceinline void TRACE_PRINT_OS_INFO()
 	TRACE_PRINT("********************* OS info.*********************");
 	buffer[size-1] = 0;
 	size = sizeof(buffer);
-	if(	RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"), 0, KEY_READ, &hKey) == ERROR_SUCCESS)
 	{
-		if (RegQueryValueExA(hKey, "PROCESSOR_ARCHITECTURE", 0, &type, (LPBYTE)buffer, &size) == ERROR_SUCCESS && type == REG_SZ)
+		if (RegQueryValueEx(hKey, _T("PROCESSOR_ARCHITECTURE"), 0, &type, (LPBYTE)buffer, &size) == ERROR_SUCCESS && type == REG_SZ)
 		{
-			OutputDebugStringVA("Architecture = %s\n", buffer);
+			OutputDebugStringV(_T("Architecture = %hs\n"), buffer);
 		}
 		else
 		{
-			OutputDebugStringVA("Architecture = <UNKNOWN>\n");
+			OutputDebugStringV(_T("Architecture = <UNKNOWN>\n"));
 		}
 		
 		RegCloseKey(hKey);
 	}
 	else
 	{
-		OutputDebugStringVA("Architecture = <UNKNOWN>\n");
+		OutputDebugStringV(_T("Architecture = <UNKNOWN>\n"));
 	}
 
 	buffer[size-1] = 0;
 	size = sizeof(buffer);
 
-	if(	RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"), 0, KEY_READ, &hKey) == ERROR_SUCCESS)
 	{
-		if (RegQueryValueExA(hKey, "CurrentVersion", 0, &type,  (LPBYTE)buffer, &size) == ERROR_SUCCESS && type == REG_SZ)
+		if (RegQueryValueEx(hKey, _T("CurrentVersion"), 0, &type,  (LPBYTE)buffer, &size) == ERROR_SUCCESS && type == REG_SZ)
 		{
-			OutputDebugStringVA("Windows version = %s\n", buffer);
+			OutputDebugStringV(_T("Windows version = %hs\n"), buffer);
 		}
 		else
 		{
-			OutputDebugStringVA("Windows version = <UNKNOWN>\n");
+			OutputDebugStringV(_T("Windows version = <UNKNOWN>\n"));
 		}
 		
 		RegCloseKey(hKey);
 	}
 	else
 	{
-		OutputDebugStringVA("Windows version = <UNKNOWN>\n");
+		OutputDebugStringV(_T("Windows version = <UNKNOWN>\n"));
 	}
 
 	buffer[size-1] = 0;
 	size = sizeof(buffer);
-	if(	RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	if(	RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"), 0, KEY_READ, &hKey) == ERROR_SUCCESS)
 	{
-		if (RegQueryValueExA(hKey, "CurrentType", 0, &type,  (LPBYTE)buffer, &size) == ERROR_SUCCESS && type == REG_SZ)
+		if (RegQueryValueEx(hKey, _T("CurrentType"), 0, &type,  (LPBYTE)buffer, &size) == ERROR_SUCCESS && type == REG_SZ)
 		{
-			OutputDebugStringVA("Windows CurrentType = %s\n", buffer);
+			OutputDebugStringV(_T("Windows CurrentType = %hs\n"), buffer);
 		}
 		else
 		{
-			OutputDebugStringVA("Windows CurrentType = <UNKNOWN>\n");
+			OutputDebugStringV(_T("Windows CurrentType = <UNKNOWN>\n"));
 		}
 		
 		RegCloseKey(hKey);
 	}
 	else
 	{
-		OutputDebugStringVA("Windows CurrentType = <UNKNOWN>\n");
+		OutputDebugStringV(_T("Windows CurrentType = <UNKNOWN>\n"));
 	}
 
-	OutputDebugStringVA("*************************************************** \n");
+	OutputDebugStringV(_T("*************************************************** \n"));
 
 	SetLastError(dwLastError);
 }
 #else
 
-#define TRACE_ENTER(_x)
-#define TRACE_PRINT_DLLMAIN(_x)
-#define TRACE_EXIT(_x) 
+#define TRACE_ENTER()
+#define TRACE_EXIT()
 #define TRACE_PRINT(_x)
-#define TRACE_PRINT1(_x, _y)
+#define TRACE_PRINT1(_x, _p1)
 #define TRACE_PRINT2(_x, _p1, _p2)
-#define TRACE_PRINT4(_x, _p1, _p2, _p3, _p4) 
-#define TRACE_PRINT6(_x, _p1, _p2, _p3, _p4, _p5, _p6) 
+#define TRACE_PRINT3(_x, _p1, _p2, _p3)
+#define TRACE_PRINT4(_x, _p1, _p2, _p3, _p4)
+#define TRACE_PRINT5(_x, _p1, _p2, _p3, _p4, _p5)
+#define TRACE_PRINT6(_x, _p1, _p2, _p3, _p4, _p5, _p6)
 #define TRACE_PRINT_WIDECHAR(_x)
 #define TRACE_PRINT_OS_INFO()
 

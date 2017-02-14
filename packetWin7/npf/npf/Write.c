@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
  * Copyright (c) 1999 - 2005 NetGroup, Politecnico di Torino (Italy)
  * Copyright (c) 2005 - 2010 CACE Technologies, Davis (California)
@@ -119,7 +167,7 @@ NPF_Write(
 	// 
 	// Increment the ref counter of the binding handle, if possible
 	//
-	if (NPF_StartUsingBinding(Open) == FALSE)
+	if (!Open->GroupHead || NPF_StartUsingBinding(Open->GroupHead) == FALSE)
 	{
 		TRACE_MESSAGE(PACKET_DEBUG_LOUD, "Adapter is probably unbinding, cannot send packets");
 
@@ -139,7 +187,7 @@ NPF_Write(
 		// Another write operation is currently in progress
 		NdisReleaseSpinLock(&Open->WriteLock);
 
-		NPF_StopUsingBinding(Open);
+		NPF_StopUsingBinding(Open->GroupHead);
 
 		TRACE_MESSAGE(PACKET_DEBUG_LOUD, "Another Send operation is in progress, aborting.");
 
@@ -209,10 +257,10 @@ NPF_Write(
 
 			// Attach the writes buffer to the packet
 
-			// ASSERT(Open->GroupHead != NULL);
+			ASSERT(Open->GroupHead != NULL);
 
 			NdisAcquireSpinLock(&Open->OpenInUseLock);
-			if (!Open->GroupHead || Open->GroupHead->AdapterBindingStatus != ADAPTER_BOUND || Open->GroupHead->PausePending)
+			if (Open->GroupHead->PausePending)
 			{
 				Status = NDIS_STATUS_PAUSED;
 			}
@@ -229,7 +277,7 @@ NPF_Write(
 				TRACE_MESSAGE(PACKET_DEBUG_LOUD, "The adapter is pending to pause, unable to send the packets.");
 
 				NPF_FreePackets(pNetBufferList);
-				NPF_StopUsingBinding(Open);
+				NPF_StopUsingBinding(Open->GroupHead);
 				NPF_StopUsingOpenInstance(Open);
 
 				Irp->IoStatus.Information = 0;
@@ -243,21 +291,13 @@ NPF_Write(
 			NdisResetEvent(&Open->NdisWriteCompleteEvent);
 
 			//receive the packets before sending them
-			if (Open->GroupHead != NULL)
-			{
-				GroupOpen = Open->GroupHead->GroupNext;
-			}
-			else
-			{
-				//this is impossible
-				GroupOpen = Open->GroupNext;
-			}
 
 #ifdef HAVE_WFP_LOOPBACK_SUPPORT
 			// Do not capture the send traffic we send, if this is our loopback adapter.
 			if (Open->Loopback == FALSE)
 			{
 #endif
+				GroupOpen = Open->GroupHead->GroupNext;
 				while (GroupOpen != NULL)
 				{
 					TempOpen = GroupOpen;
@@ -380,7 +420,7 @@ NPF_Write(
 	//
 	// all the packets have been transmitted, release the use of the adapter binding
 	//
-	NPF_StopUsingBinding(Open);
+	NPF_StopUsingBinding(Open->GroupHead);
 
 	//
 	// no more writes are in progress
@@ -439,7 +479,7 @@ NPF_BufferedWrite(
 
 	Open = (POPEN_INSTANCE) IrpSp->FileObject->FsContext;
 
-	if (NPF_StartUsingBinding(Open) == FALSE)
+	if (!Open->GroupHead || NPF_StartUsingBinding(Open->GroupHead) == FALSE)
 	{
 		// The Network adapter was removed. 
 		TRACE_EXIT();
@@ -452,7 +492,7 @@ NPF_BufferedWrite(
 		// 
 		// release ownership of the NdisAdapter binding
 		//
-		NPF_StopUsingBinding(Open);
+		NPF_StopUsingBinding(Open->GroupHead);
 		TRACE_EXIT();
 		return 0;
 	}
@@ -465,7 +505,7 @@ NPF_BufferedWrite(
 		// 
 		// release ownership of the NdisAdapter binding
 		//
-		NPF_StopUsingBinding(Open);
+		NPF_StopUsingBinding(Open->GroupHead);
 		TRACE_EXIT();
 		return 0;
 	}
@@ -600,10 +640,10 @@ NPF_BufferedWrite(
 
 		TmpMdl->Next = NULL;
 
-		// ASSERT(Open->GroupHead != NULL);
+		ASSERT(Open->GroupHead != NULL);
 
 		NdisAcquireSpinLock(&Open->OpenInUseLock);
-		if (!Open->GroupHead || Open->GroupHead->AdapterBindingStatus != ADAPTER_BOUND || Open->GroupHead->PausePending)
+		if (Open->GroupHead->PausePending)
 		{
 			Status = NDIS_STATUS_PAUSED;
 		}
@@ -625,16 +665,8 @@ NPF_BufferedWrite(
 		}
 
 		//receive the packets before sending them
-		if (Open->GroupHead != NULL)
-		{
-			GroupOpen = Open->GroupHead->GroupNext;
-		}
-		else
-		{
-			GroupOpen = Open->GroupNext;
-		}
-		
-		GroupOpen = Open->GroupNext;
+		GroupOpen = Open->GroupHead->GroupNext;
+
 		while (GroupOpen != NULL)
 		{
 			TempOpen = GroupOpen;
@@ -741,7 +773,7 @@ NPF_BufferedWrite(
 	// 
 	// release ownership of the NdisAdapter binding
 	//
-	NPF_StopUsingBinding(Open);
+	NPF_StopUsingBinding(Open->GroupHead);
 
 	TRACE_EXIT();
 	return result;
@@ -771,7 +803,6 @@ NPF_WaitEndOfBufferedWrite(
 
 //-------------------------------------------------------------------
 
-_Use_decl_annotations_
 VOID
 NPF_FreePackets(
 	PNET_BUFFER_LIST    NetBufferLists
@@ -988,7 +1019,7 @@ NPF_SendCompleteExForEachOpen(
 		//TRACE_EXIT();
 	}
 
-	if (Open->Multiple_Write_Counter == 0 && Open->TransmitPendingPackets == 0 && Open->PausePending)
+	if (Open->Multiple_Write_Counter == 0 && Open->TransmitPendingPackets == 0 && Open->GroupHead->PausePending)
 	{
 		CompletePause = TRUE;
 	}

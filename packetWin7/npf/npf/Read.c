@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
  * Copyright (c) 1999 - 2005 NetGroup, Politecnico di Torino (Italy)
  * Copyright (c) 2005 - 2010 CACE Technologies, Davis (California)
@@ -53,10 +101,12 @@
  //
  // Global variables
  //
-extern ULONG g_VlanSupportMode;
+extern ULONG	g_VlanSupportMode;
+extern ULONG	g_DltNullMode;
 
 //-------------------------------------------------------------------
 
+_Use_decl_annotations_
 NTSTATUS
 NPF_Read(
 	IN PDEVICE_OBJECT DeviceObject,
@@ -109,14 +159,14 @@ NPF_Read(
 	// This is not critical, since we just want to have a quick way to have the
 	// dispatch read fail in case the adapter has been unbound
 
-	if (NPF_StartUsingBinding(Open) == FALSE)
+	if (!Open->GroupHead || NPF_StartUsingBinding(Open->GroupHead) == FALSE)
 	{
 		NPF_StopUsingOpenInstance(Open);
 		// The Network adapter has been removed or diasabled
 		TRACE_EXIT();
 		EXIT_FAILURE(0);
 	}
-	NPF_StopUsingBinding(Open);
+	NPF_StopUsingBinding(Open->GroupHead);
 
 	if (Open->Size == 0)
 	{
@@ -147,6 +197,7 @@ NPF_Read(
 		{
 			//wait until some packets arrive or the timeout expires
 			if (Open->TimeOut.QuadPart != (LONGLONG)IMMEDIATE)
+#pragma warning (disable: 28118)
 				KeWaitForSingleObject(Open->ReadEvent,
 				UserRequest,
 				KernelMode,
@@ -159,7 +210,7 @@ NPF_Read(
 		if (Open->mode & MODE_STAT)
 		{
 			//this capture instance is in statistics mode
-			CurrBuff = (PUCHAR) MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+			CurrBuff = (PUCHAR) MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority | MdlMappingNoExecute);
 
 			if (CurrBuff == NULL)
 			{
@@ -343,7 +394,14 @@ NPF_Read(
 	current_cpu = 0;
 	available = IrpSp->Parameters.Read.Length;
 
-	packp = (PUCHAR) MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+	if (Irp->MdlAddress == 0x0)
+	{
+		NPF_StopUsingOpenInstance(Open);
+		TRACE_EXIT();
+		EXIT_FAILURE(0);
+	}
+
+	packp = (PUCHAR) MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority | MdlMappingNoExecute);
 
 
 	if (packp == NULL)
@@ -634,14 +692,16 @@ NPF_TapExForEachOpen(
 	ULONG					TotalLength;
 	UINT					TotalPacketSize;
 
-	PMDL                    pMdl = NULL;
-	UINT                    BufferLength;
-	PNDISPROT_ETH_HEADER    pEthHeader = NULL;
-	PNET_BUFFER_LIST        pNetBufList;
-	PNET_BUFFER_LIST        pNextNetBufList;
-	PNET_BUFFER             pNetBuf;
-	PNET_BUFFER             pNextNetBuf;
-	ULONG                   Offset;
+	PMDL					pMdl = NULL;
+	UINT					BufferLength;
+	PUCHAR					pDataLinkBuffer = NULL;
+	PNET_BUFFER_LIST		pNetBufList;
+	PNET_BUFFER_LIST		pNextNetBufList;
+	PNET_BUFFER				pNetBuf;
+	PNET_BUFFER				pNextNetBuf;
+	ULONG					Offset;
+
+	UINT					DataLinkHeaderSize;
 
 #ifdef HAVE_DOT11_SUPPORT
 	UCHAR					Dot11RadiotapHeader[256] = { 0 };
@@ -649,6 +709,23 @@ NPF_TapExForEachOpen(
 #endif
 
 	//TRACE_ENTER();
+
+// 	if (NPF_StartUsingOpenInstance(Open) == FALSE)
+// 	{
+// 		// The adapter is in use or even released, stop the tapping.
+// 		return;
+// 	}
+
+#ifdef HAVE_WFP_LOOPBACK_SUPPORT
+	if (Open->Loopback && g_DltNullMode)
+	{
+		DataLinkHeaderSize = DLT_NULL_HDR_LEN;
+	}
+	else
+#endif
+	{
+		DataLinkHeaderSize = ETHER_HDR_LEN;
+	}
 
 	pNetBufList = pNetBufferLists;
 	while (pNetBufList != NULL)
@@ -679,7 +756,7 @@ NPF_TapExForEachOpen(
 #ifdef HAVE_DOT11_SUPPORT
 		// Handle native 802.11 media specific OOB data here.
 		// This code will help provide the radiotap header for 802.11 packets, see http://www.radiotap.org for details.
-		if (Open->Medium == NdisMediumNative802_11 && (NET_BUFFER_LIST_INFO(pNetBufList, MediaSpecificInformation) != 0))
+		if (Open->Dot11 && (NET_BUFFER_LIST_INFO(pNetBufList, MediaSpecificInformation) != 0))
 		{
 			PDOT11_EXTSTA_RECV_CONTEXT  pwInfo;
 			PIEEE80211_RADIOTAP_HEADER pRadiotapHeader = (PIEEE80211_RADIOTAP_HEADER) Dot11RadiotapHeader;
@@ -833,7 +910,7 @@ NPF_TapExForEachOpen(
 		{
 			pNextNetBuf = NET_BUFFER_NEXT_NB(pNetBuf);
 
-			Cpu = KeGetCurrentProcessorNumber();
+			Cpu = My_KeGetCurrentProcessorNumber();
 			LocalData = &Open->CpuData[Cpu];
 
 			LocalData->Received++;
@@ -856,12 +933,12 @@ NPF_TapExForEachOpen(
 				{
 					NdisQueryMdl(
 						pMdl,
-						&pEthHeader,
+						&pDataLinkBuffer,
 						&BufferLength,
 						NormalPagePriority);
 				}
 
-				if (pEthHeader == NULL)
+				if (pDataLinkBuffer == NULL)
 				{
 					//
 					//  The system is low on resources. Set up to handle failure
@@ -879,22 +956,22 @@ NPF_TapExForEachOpen(
 				}
 
 				BufferLength -= Offset;
-				pEthHeader = (PNDISPROT_ETH_HEADER)((PUCHAR)pEthHeader + Offset);
+				pDataLinkBuffer += Offset;
 
 				// As for single MDL (as we assume) condition, we always have BufferLength == TotalLength
 				if (BufferLength > TotalLength)
 					BufferLength = TotalLength;
 
 				// Handle multiple MDLs situation here, if there's only 20 bytes in the first MDL, then the IP header is in the second MDL.
-				if (BufferLength == sizeof(NDISPROT_ETH_HEADER) && pMdl->Next != NULL)
+				if (BufferLength == DataLinkHeaderSize && pMdl->Next != NULL)
 				{
 					TmpBuffer = ExAllocatePoolWithTag(NonPagedPool, pNetBuf->DataLength, 'NPCA');
-					pEthHeader = NdisGetDataBuffer(pNetBuf,
+					pDataLinkBuffer = NdisGetDataBuffer(pNetBuf,
 						pNetBuf->DataLength,
 						TmpBuffer,
 						1,
 						0);
-					if (!pEthHeader)
+					if (!pDataLinkBuffer)
 					{
 						TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
 							"NPF_TapExForEachOpen: NdisGetDataBuffer() [status: %#x]\n",
@@ -927,9 +1004,9 @@ NPF_TapExForEachOpen(
 				//
 				//DispatchLevel = NDIS_TEST_RECEIVE_AT_DISPATCH_LEVEL(ReceiveFlags);
 
-				HeaderBuffer = (PUCHAR)pEthHeader;
-				HeaderBufferSize = sizeof(NDISPROT_ETH_HEADER);
-				LookaheadBuffer = (PUCHAR)pEthHeader + sizeof(NDISPROT_ETH_HEADER);
+				HeaderBuffer = pDataLinkBuffer;
+				HeaderBufferSize = DataLinkHeaderSize;
+				LookaheadBuffer = pDataLinkBuffer + HeaderBufferSize;
 				LookaheadBufferSize = BufferLength - HeaderBufferSize;
 				PacketSize = LookaheadBufferSize;
 
@@ -1056,7 +1133,7 @@ NPF_TapExForEachOpen(
 						{
 							NdisQueryMdl(
 								pCurMdl,
-								&pEthHeader,
+								&pDataLinkBuffer,
 								&BufferLength,
 								NormalPagePriority);
 							TotalPacketSize += BufferLength;
@@ -1184,7 +1261,7 @@ NPF_TapExForEachOpen(
 						{
 							NdisQueryMdl(
 								pCurMdl,
-								&pEthHeader,
+								&pDataLinkBuffer,
 								&BufferLength,
 								NormalPagePriority);
 
@@ -1193,7 +1270,7 @@ NPF_TapExForEachOpen(
 							{
 								IF_LOUD(DbgPrint("The 1st MDL, (Original) MdlSize = %d, Offset = %d\n", BufferLength, Offset);)
 								BufferLength -= Offset;
-								pEthHeader = (PNDISPROT_ETH_HEADER)((PUCHAR)pEthHeader + Offset);
+								pDataLinkBuffer += Offset;
 							}
 
 							if (iFres != -1)
@@ -1211,15 +1288,15 @@ NPF_TapExForEachOpen(
 								//the MDL data will be fragmented in the buffer (aka, it will skip the buffer boundary)
 								//two copies!!
 								ToCopy = Open->Size - LocalData->P;
-								NdisMoveMappedMemory(LocalData->Buffer + LocalData->P, pEthHeader, ToCopy);
-								NdisMoveMappedMemory(LocalData->Buffer + 0, (PUCHAR)pEthHeader + ToCopy, CopyLengthForMDL - ToCopy);
+								NdisMoveMappedMemory(LocalData->Buffer + LocalData->P, pDataLinkBuffer, ToCopy);
+								NdisMoveMappedMemory(LocalData->Buffer + 0, pDataLinkBuffer + ToCopy, CopyLengthForMDL - ToCopy);
 								LocalData->P = CopyLengthForMDL - ToCopy;
 
 								IF_LOUD(DbgPrint("iFres = %d, MdlSize = %d, CopyLengthForMDL = %d (two copies)\n", iFres, BufferLength, CopyLengthForMDL);)
 							}
 							else
 							{
-								NdisMoveMappedMemory(LocalData->Buffer + LocalData->P, pEthHeader, CopyLengthForMDL);
+								NdisMoveMappedMemory(LocalData->Buffer + LocalData->P, pDataLinkBuffer, CopyLengthForMDL);
 								LocalData->P += CopyLengthForMDL;
 
 								IF_LOUD(DbgPrint("iFres = %d, MdlSize = %d, CopyLengthForMDL = %d\n", iFres, BufferLength, CopyLengthForMDL);)
@@ -1284,5 +1361,6 @@ NPF_TapExForEachOpen_End:;
 		pNetBufList = pNextNetBufList;
 	} // while (pNetBufList != NULL)
 
+	//NPF_StopUsingOpenInstance(Open);
 	//TRACE_EXIT();
 }

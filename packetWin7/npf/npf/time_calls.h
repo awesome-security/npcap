@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
  * Copyright (c) 2001 - 2005 NetGroup, Politecnico di Torino (Italy)
  * Copyright (c) 2005 - 2007 CACE Technologies, Davis (California)
@@ -49,12 +97,21 @@
 
 extern ULONG g_TimestampMode;
 
+/* Defined in Packet.c/h */
+ULONG
+My_NdisGroupMaxProcessorCount(
+);
+
+/* Defined in Packet.c/h */
+ULONG
+My_KeGetCurrentProcessorNumber(
+);
+
 /*!
   \brief A microsecond precise timestamp.
 
   included in the sf_pkthdr or the bpf_hdr that NPF associates with every packet. 
 */
-
 struct timeval
 {
 	long tv_sec;		 ///< seconds
@@ -63,10 +120,13 @@ struct timeval
 
 #endif /*WIN_NT_DRIVER*/
 
+// Maximum CPU core number, the original value is sizeof(KAFFINITY) * 8, but Amazon instance can return 128 cores, so we make NPF_MAX_CPU_NUMBER to 256 for safe.
+#define NPF_MAX_CPU_NUMBER		sizeof(KAFFINITY) * 32
+
 struct time_conv
 {
 	ULONGLONG reference;
-	struct timeval start[32];
+	struct timeval start[NPF_MAX_CPU_NUMBER];
 };
 
 #ifdef WIN_NT_DRIVER
@@ -248,11 +308,7 @@ __inline VOID TIME_SYNCHRONIZE(struct time_conv* data)
 	if (data->reference != 0)
 		return;
 
-#ifdef NDIS620
-	NumberOfCpus = NdisGroupMaxProcessorCount(ALL_PROCESSOR_GROUPS);
-#else
-	NumberOfCpus = NdisSystemProcessorCount();
-#endif
+	NumberOfCpus = My_NdisGroupMaxProcessorCount();
 
 	if (g_TimestampMode == TIMESTAMPMODE_SYNCHRONIZATION_ON_CPU_WITH_FIXUP || g_TimestampMode == TIMESTAMPMODE_SYNCHRONIZATION_ON_CPU_NO_FIXUP)
 	{
@@ -314,7 +370,7 @@ __inline void GetTimeKQPC(struct timeval* dst, struct time_conv* data)
 	if (g_TimestampMode == TIMESTAMPMODE_SYNCHRONIZATION_ON_CPU_WITH_FIXUP || g_TimestampMode == TIMESTAMPMODE_SYNCHRONIZATION_ON_CPU_NO_FIXUP)
 	{
 		//actually this code is ok only if we are guaranteed that no thread scheduling will take place. 
-		CurrentCpu = KeGetCurrentProcessorNumber();	
+		CurrentCpu = My_KeGetCurrentProcessorNumber();
 
 		dst->tv_sec = data->start[CurrentCpu].tv_sec + tmp;
 		dst->tv_usec = data->start[CurrentCpu].tv_usec + (LONG)((PTime.QuadPart % TimeFreq.QuadPart) * 1000000 / TimeFreq.QuadPart);

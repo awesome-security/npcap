@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
 * Copyright (c) 1999 - 2005 NetGroup, Politecnico di Torino (Italy)
 * Copyright (c) 2005 - 2010 CACE Technologies, Davis (California)
@@ -43,17 +91,18 @@
 #include "Lo_send.h"
 #include "..\..\..\Common\WpcapNames.h"
 
-#define ADAPTER_NAME_SIZE_WITH_SEPARATOR 47 //An example is: \Device\{754FC84C-EFBC-4443-B479-2EFAE01DC7BF};
-
 extern NDIS_STRING g_LoopbackAdapterName;
 extern NDIS_STRING g_SendToRxAdapterName;
 extern NDIS_STRING g_BlockRxAdapterName;
 extern NDIS_STRING devicePrefix;
+extern ULONG g_Dot11SupportMode;
 
 #ifdef HAVE_WFP_LOOPBACK_SUPPORT
 	extern HANDLE g_WFPEngineHandle;
 	extern PDEVICE_OBJECT g_LoopbackDevObj;
 #endif
+
+extern NDIS_HANDLE FilterDriverHandle_WiFi; // NDIS handle for WiFi filter driver
 
 static
 VOID
@@ -78,7 +127,8 @@ NPF_StartUsingBinding(
 	)
 {
 	ASSERT(pOpen != NULL);
-	ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+	// NPF_OpenAdapter() is not called on PASSIVE_LEVEL, so the assertion will fail.
+	// ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
 	NdisAcquireSpinLock(&pOpen->AdapterHandleLock);
 
@@ -179,63 +229,6 @@ NPF_CloseBinding(
 
 //-------------------------------------------------------------------
 
-VOID
-NPF_CloseBindingAndAdapter(
-	IN POPEN_INSTANCE pOpen
-	)
-{
-	NDIS_EVENT Event;
-	NDIS_STATUS Status;
-
-	ASSERT(pOpen != NULL);
-	ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
-
-	NdisInitializeEvent(&Event);
-	NdisResetEvent(&Event);
-
-	NdisAcquireSpinLock(&pOpen->AdapterHandleLock);
-
-	while (pOpen->AdapterHandleUsageCounter > 0)
-	{
-		NdisReleaseSpinLock(&pOpen->AdapterHandleLock);
-		NdisWaitEvent(&Event, 1);
-		NdisAcquireSpinLock(&pOpen->AdapterHandleLock);
-	}
-
-	//
-	// now the UsageCounter is 0
-	//
-
-	while (pOpen->AdapterBindingStatus == ADAPTER_UNBINDING)
-	{
-		NdisReleaseSpinLock(&pOpen->AdapterHandleLock);
-		NdisWaitEvent(&Event, 1);
-		NdisAcquireSpinLock(&pOpen->AdapterHandleLock);
-	}
-
-	//
-	// now the binding status is either bound or unbound
-	//
-
-	if (pOpen->AdapterBindingStatus == ADAPTER_UNBOUND)
-	{
-		NdisReleaseSpinLock(&pOpen->AdapterHandleLock);
-		return;
-	}
-
-	ASSERT(pOpen->AdapterBindingStatus == ADAPTER_BOUND);
-
-	pOpen->AdapterBindingStatus = ADAPTER_UNBINDING;
-
-	NdisReleaseSpinLock(&pOpen->AdapterHandleLock);
-
-	NdisAcquireSpinLock(&pOpen->AdapterHandleLock);
-	pOpen->AdapterBindingStatus = ADAPTER_UNBOUND;
-	NdisReleaseSpinLock(&pOpen->AdapterHandleLock);
-}
-
-//-------------------------------------------------------------------
-
 NTSTATUS
 NPF_OpenAdapter(
 	IN PDEVICE_OBJECT DeviceObject,
@@ -243,9 +236,10 @@ NPF_OpenAdapter(
 	)
 {
 	PDEVICE_EXTENSION		DeviceExtension;
+	POPEN_INSTANCE			GroupHead;
 	POPEN_INSTANCE			Open;
 	PIO_STACK_LOCATION		IrpSp;
-	NDIS_STATUS				Status;
+	NDIS_STATUS				Status = STATUS_SUCCESS;
 	ULONG					localNumOpenedInstances;
 
 	TRACE_ENTER();
@@ -254,17 +248,37 @@ NPF_OpenAdapter(
 
 	IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-	//find the head adaper of the global open array, if found, create a group child adapter object from the head adapter.
-	Open = NPF_GetCopyFromOpenArray(&DeviceExtension->AdapterName, DeviceExtension);
+	// Find the head adapter of the global open array.
+	GroupHead = NPF_GetOpenByAdapterName(&DeviceExtension->AdapterName, DeviceExtension->Dot11);
 
-	if (Open == NULL)
+	if (GroupHead == NULL)
 	{
-		//cannot find the adapter from the global open array.
+		// Can't find the adapter from the global open array.
+		TRACE_MESSAGE2(PACKET_DEBUG_LOUD,
+			"NPF_GetOpenByAdapterName error, GroupHead=NULL, AdapterName=%ws, Dot11=%d",
+			DeviceExtension->AdapterName.Buffer,
+			DeviceExtension->Dot11);
+
 		Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
 		TRACE_EXIT();
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
+
+	if (NPF_StartUsingBinding(GroupHead) == FALSE)
+	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+			"NPF_StartUsingOpenInstance error, AdapterName=%ws",
+			DeviceExtension->AdapterName.Buffer);
+
+		Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+		IoCompleteRequest(Irp, IO_NO_INCREMENT);
+		TRACE_EXIT();
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	// Create a group child adapter object from the head adapter.
+	Open = NPF_DuplicateOpenObject(GroupHead, DeviceExtension);
 
 	Open->DeviceExtension = DeviceExtension;
 #ifdef HAVE_WFP_LOOPBACK_SUPPORT
@@ -279,16 +293,6 @@ NPF_OpenAdapter(
 		DeviceExtension->AdapterName.Buffer,
 		Open);
 #endif
-
-	//
-	// complete the open
-	//
-	localNumOpenedInstances = InterlockedIncrement(&g_NumOpenedInstances);
-	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Opened Instances: %u", localNumOpenedInstances);
-
-	// Get the absolute value of the system boot time.
-	// This is used for timestamp conversion.
-	TIME_SYNCHRONIZE(&G_Start_Time);
 
 #ifdef HAVE_WFP_LOOPBACK_SUPPORT
 	if (Open->Loopback)
@@ -344,13 +348,16 @@ NPF_OpenAdapter(
 
 #ifdef HAVE_DOT11_SUPPORT
 	// Fetch the device's data rate mapping table with the OID_DOT11_DATA_RATE_MAPPING_TABLE OID.
-	if (NPF_GetDataRateMappingTable(Open, &Open->DataRateMappingTable) != STATUS_SUCCESS)
+	if (Open->Dot11)
 	{
-		Open->HasDataRateMappingTable = FALSE;
-	}
-	else
-	{
-		Open->HasDataRateMappingTable = TRUE;
+		if (NPF_GetDataRateMappingTable(Open, &Open->DataRateMappingTable) != STATUS_SUCCESS)
+		{
+			Open->HasDataRateMappingTable = FALSE;
+		}
+		else
+		{
+			Open->HasDataRateMappingTable = TRUE;
+		}
 	}
 #endif
 
@@ -359,18 +366,14 @@ NPF_OpenAdapter_End:;
 #endif
 	if (!NT_SUCCESS(Status))
 	{
-		// Close the binding
-		NPF_CloseBinding(Open);
-
 		// Free the open instance' resources
 		NPF_ReleaseOpenInstanceResources(Open);
 
 		// Free the open instance itself
-		if (Open)
-		{
-			ExFreePool(Open);
-			Open = NULL;
-		}
+		ExFreePool(Open);
+		Open = NULL;
+
+		NPF_StopUsingBinding(GroupHead);
 
 		Irp->IoStatus.Status = Status;
 		IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -383,8 +386,20 @@ NPF_OpenAdapter_End:;
 		IrpSp->FileObject->FsContext = Open;
 	}
 
-	NPF_AddToOpenArray(Open);
-	NPF_AddToGroupOpenArray(Open);
+	//
+	// complete the open
+	//
+	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Open = %p\n", Open);
+	localNumOpenedInstances = InterlockedIncrement(&g_NumOpenedInstances);
+	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Opened Instances: %u", localNumOpenedInstances);
+
+	// Get the absolute value of the system boot time.
+	// This is used for timestamp conversion.
+	TIME_SYNCHRONIZE(&G_Start_Time);
+
+	NPF_AddToGroupOpenArray(Open, GroupHead);
+
+	NPF_StopUsingBinding(GroupHead);
 
 	Irp->IoStatus.Status = Status;
 	Irp->IoStatus.Information = 0;
@@ -484,9 +499,9 @@ NPF_ReleaseOpenInstanceResources(
 	}
 
 	// Release the adapter name
-	if (pOpen->AdapterName.MaximumLength != 0)
+	if (pOpen->AdapterName.Buffer)
 	{
-		NdisFreeString(pOpen->AdapterName);
+		ExFreePool(pOpen->AdapterName.Buffer);
 		pOpen->AdapterName.Buffer = NULL;
 		pOpen->AdapterName.Length = 0;
 		pOpen->AdapterName.MaximumLength = 0;
@@ -530,6 +545,7 @@ NPF_ReleaseOpenInstanceResources(
 	{
 		ExFreePool(pOpen->CpuData[0].Buffer);
 		pOpen->CpuData[0].Buffer = NULL;
+		pOpen->Size = 0;
 	}
 
 	//
@@ -608,7 +624,7 @@ NPF_GetDataRateMappingTable(
 	ASSERT(pOpen != NULL);
 	ASSERT(pDataRateMappingTable != NULL);
 
-	DOT11_DATA_RATE_MAPPING_TABLE DataRateMappingTable;
+	DOT11_DATA_RATE_MAPPING_TABLE DataRateMappingTable = { 0 };
 	ULONG BytesProcessed = 0;
 
 	NPF_DoInternalRequest(pOpen,
@@ -679,7 +695,7 @@ NPF_GetCurrentOperationMode(
 	ASSERT(pOpen != NULL);
 	ASSERT(pCurrentOperationMode != NULL);
 
-	DOT11_CURRENT_OPERATION_MODE CurrentOperationMode;
+	DOT11_CURRENT_OPERATION_MODE CurrentOperationMode = { 0 };
 	ULONG BytesProcessed = 0;
 
 	NPF_DoInternalRequest(pOpen,
@@ -739,7 +755,7 @@ NPF_GetCurrentChannel(
 	ASSERT(pOpen != NULL);
 	ASSERT(pCurrentChannel != NULL);
 
-	ULONG CurrentChannel;
+	ULONG CurrentChannel = 0;
 	ULONG BytesProcessed = 0;
 
 	NPF_DoInternalRequest(pOpen,
@@ -796,7 +812,7 @@ NPF_GetCurrentFrequency(
 	ASSERT(pOpen != NULL);
 	ASSERT(pCurrentFrequency != NULL);
 
-	ULONG CurrentFrequency;
+	ULONG CurrentFrequency = 0;
 	ULONG BytesProcessed = 0;
 
 	NPF_DoInternalRequest(pOpen,
@@ -876,28 +892,6 @@ NPF_CloseAdapter(
 //-------------------------------------------------------------------
 
 NTSTATUS
-NPF_CloseAdapterForUnclosed(
-	POPEN_INSTANCE pOpen
-	)
-{
-	TRACE_ENTER();
-
-	ASSERT(pOpen != NULL);
-	//
-	// Free the open instance itself
-	//
-	if (pOpen)
-	{
-		ExFreePool(pOpen);
-	}
-
-	TRACE_EXIT();
-	return STATUS_SUCCESS;
-}
-
-//-------------------------------------------------------------------
-
-NTSTATUS
 NPF_Cleanup(
 	IN PDEVICE_OBJECT DeviceObject,
 	IN PIRP Irp
@@ -918,15 +912,12 @@ NPF_Cleanup(
 
 	ASSERT(Open != NULL);
 
-	NPF_RemoveFromOpenArray(Open); //Remove the adapter from the global adapter list
 	NPF_RemoveFromGroupOpenArray(Open); //Remove the adapter from the group adapter list
 
 	NPF_CloseOpenInstance(Open);
 
 	if (Open->ReadEvent != NULL)
 		KeSetEvent(Open->ReadEvent, 0, FALSE);
-
-	NPF_CloseBinding(Open);
 
 	// NOTE:
 	// code commented out because the kernel dump feature is disabled
@@ -992,118 +983,18 @@ NPF_Cleanup(
 		TIME_DESYNCHRONIZE(&G_Start_Time);
 	}
 
+	Status = STATUS_SUCCESS;
 
 	//
 	// and complete the IRP with status success
 	//
 	Irp->IoStatus.Information = 0;
-	Irp->IoStatus.Status = STATUS_SUCCESS;
+	Irp->IoStatus.Status = Status;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
 	TRACE_EXIT();
 
-	return(STATUS_SUCCESS);
-}
-
-//-------------------------------------------------------------------
-
-NTSTATUS
-NPF_CleanupForUnclosed(
-	POPEN_INSTANCE Open
-	)
-{
-	NDIS_STATUS Status;
-	LARGE_INTEGER ThreadDelay;
-	ULONG localNumOpenInstances;
-
-	TRACE_ENTER();
-
-	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Open = %p\n", Open);
-
-	ASSERT(Open != NULL);
-
-	NPF_RemoveFromOpenArray(Open); //Remove the adapter from the global adapter list
-	NPF_RemoveFromGroupOpenArray(Open); //Remove the adapter from the group adapter list
-
-	NPF_CloseOpenInstance(Open);
-
-	if (Open->ReadEvent != NULL)
-		KeSetEvent(Open->ReadEvent, 0, FALSE);
-
-	NPF_CloseBinding(Open);
-
-	// NOTE:
-	// code commented out because the kernel dump feature is disabled
-	//
-	//if (AdapterAlreadyClosing == FALSE)
-	//{
-
-	//
-	//	 Unfreeze the consumer
-	//
-	//	if(Open->mode & MODE_DUMP)
-	//		NdisSetEvent(&Open->DumpEvent);
-	//	else
-	//		KeSetEvent(Open->ReadEvent,0,FALSE);
-
-	//	//
-	//	// If this instance is in dump mode, complete the dump and close the file
-	//	//
-	//	if((Open->mode & MODE_DUMP) && Open->DumpFileHandle != NULL)
-	//	{
-	//		NTSTATUS wres;
-
-	//		ThreadDelay.QuadPart = -50000000;
-
-	//		//
-	//		// Wait the completion of the thread
-	//		//
-	//		wres = KeWaitForSingleObject(Open->DumpThreadObject,
-	//			UserRequest,
-	//			KernelMode,
-	//			TRUE,
-	//			&ThreadDelay);
-
-	//		ObDereferenceObject(Open->DumpThreadObject);
-
-	//		//
-	//		// Flush and close the dump file
-	//		//
-	//		NPF_CloseDumpFile(Open);
-	//	}
-	//}
-
-
-	//
-	// release all the resources
-	//
-	NPF_ReleaseOpenInstanceResources(Open);
-
-	//	IrpSp->FileObject->FsContext = NULL;
-
-	//
-	// Decrease the counter of open instances
-	//
-	localNumOpenInstances = InterlockedDecrement(&g_NumOpenedInstances);
-	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Opened Instances: %u", localNumOpenInstances);
-
-	if (localNumOpenInstances == 0)
-	{
-		//
-		// Force a synchronization at the next NPF_Open().
-		// This hopefully avoids the synchronization issues caused by hibernation or standby.
-		//
-		TIME_DESYNCHRONIZE(&G_Start_Time);
-	}
-
-
-	//
-	// and complete the IRP with status success
-	//
-
-	TRACE_EXIT();
-
-	return(STATUS_SUCCESS);
+	return Status;
 }
 
 //-------------------------------------------------------------------
@@ -1114,6 +1005,7 @@ NPF_AddToOpenArray(
 	)
 {
 	POPEN_INSTANCE CurOpen;
+
 	TRACE_ENTER();
 
 	NdisAcquireSpinLock(&g_OpenArrayLock);
@@ -1139,41 +1031,24 @@ NPF_AddToOpenArray(
 
 void
 NPF_AddToGroupOpenArray(
-	POPEN_INSTANCE Open
+	POPEN_INSTANCE Open,
+	POPEN_INSTANCE GroupHead
 	)
 {
-	POPEN_INSTANCE CurOpen = NULL;
-	POPEN_INSTANCE GroupRear = NULL;
+	POPEN_INSTANCE GroupRear;
+
 	TRACE_ENTER();
 
-	if (Open->DirectBinded)
-	{
-		IF_LOUD(DbgPrint("NPF_AddToGroupOpenArray: never should be here.\n");)
-		TRACE_EXIT();
-		return;
-	}
-
 	NdisAcquireSpinLock(&g_OpenArrayLock);
-	for (CurOpen = g_arrOpen; CurOpen != NULL; CurOpen = CurOpen->Next)
+	GroupRear = GroupHead;
+	while (GroupRear->GroupNext != NULL)
 	{
-		if (CurOpen->AdapterBindingStatus == ADAPTER_BOUND && NPF_EqualAdapterName(&CurOpen->AdapterName, &Open->AdapterName) == TRUE && CurOpen->DirectBinded)
-		{
-			GroupRear = CurOpen;
-			while (GroupRear->GroupNext != NULL)
-			{
-				GroupRear = GroupRear->GroupNext;
-			}
-			GroupRear->GroupNext = Open;
-			Open->GroupHead = CurOpen;
-			break;
-		}
+		GroupRear = GroupRear->GroupNext;
 	}
+	GroupRear->GroupNext = Open;
+	Open->GroupHead = GroupHead;
 	NdisReleaseSpinLock(&g_OpenArrayLock);
 
-	if (!GroupRear)
-	{
-		IF_LOUD(DbgPrint("NPF_AddToGroupOpenArray: never should be here.\n");)
-	}
 	TRACE_EXIT();
 }
 
@@ -1186,12 +1061,15 @@ NPF_RemoveFromOpenArray(
 {
 	POPEN_INSTANCE CurOpen = NULL;
 	POPEN_INSTANCE PrevOpen = NULL;
-	TRACE_ENTER();
+	POPEN_INSTANCE GroupOpen;
 
-	if (Open == NULL)
+	if (!Open)
 	{
+		IF_LOUD(DbgPrint("NPF_RemoveFromOpenArray: Open is NULL.\n");)
 		return;
 	}
+
+	TRACE_ENTER();
 
 	NdisAcquireSpinLock(&g_OpenArrayLock);
 	for (CurOpen = g_arrOpen; CurOpen != NULL; CurOpen = CurOpen->Next)
@@ -1206,12 +1084,25 @@ NPF_RemoveFromOpenArray(
 			{
 				PrevOpen->Next = CurOpen->Next;
 			}
-			//return;
+
+			break;
 		}
 		PrevOpen = CurOpen;
 	}
+
+	// Remove the links between group head and group members.
+	GroupOpen = Open->GroupNext;
+	while (GroupOpen)
+	{
+		GroupOpen->GroupHead = NULL;
+		GroupOpen = GroupOpen->GroupNext;
+	}
+	Open->GroupNext = NULL;
+
 	NdisReleaseSpinLock(&g_OpenArrayLock);
 
+	if (!CurOpen)
+		IF_LOUD(DbgPrint("NPF_RemoveFromOpenArray: error, the open isn't in the global open list.\n");)
 	TRACE_EXIT();
 }
 
@@ -1222,14 +1113,14 @@ NPF_RemoveFromGroupOpenArray(
 	POPEN_INSTANCE Open
 	)
 {
-	POPEN_INSTANCE CurOpen;
 	POPEN_INSTANCE GroupOpen;
 	POPEN_INSTANCE GroupPrev = NULL;
+
 	TRACE_ENTER();
 
-	if (Open->DirectBinded)
+	if (!Open->GroupHead || Open->GroupHead == Open)
 	{
-		IF_LOUD(DbgPrint("NPF_RemoveFromGroupOpenArray: never should be here.\n");)
+		IF_LOUD(DbgPrint("NPF_RemoveFromGroupOpenArray: error, the open doesn't have a group head.\n");)
 		TRACE_EXIT();
 		return;
 	}
@@ -1240,25 +1131,26 @@ NPF_RemoveFromGroupOpenArray(
 	{
 		if (GroupOpen == Open)
 		{
-			if (GroupPrev == NULL)
+			if (GroupPrev)
 			{
-				ASSERT(GroupPrev != NULL);
-				break;
+				GroupPrev->GroupNext = GroupOpen->GroupNext;
 			}
 			else
 			{
-				GroupPrev->GroupNext = GroupOpen->GroupNext;
-				NdisReleaseSpinLock(&g_OpenArrayLock);
-				TRACE_EXIT();
-				return;
+				Open->GroupHead = GroupOpen->GroupNext;
 			}
+			GroupOpen->GroupHead = NULL;
+
+			NdisReleaseSpinLock(&g_OpenArrayLock);
+			TRACE_EXIT();
+			return;
 		}
 		GroupPrev = GroupOpen;
 		GroupOpen = GroupOpen->GroupNext;
 	}
 	NdisReleaseSpinLock(&g_OpenArrayLock);
 
-	IF_LOUD(DbgPrint("NPF_RemoveFromGroupOpenArray: never should be here.\n");)
+	IF_LOUD(DbgPrint("NPF_RemoveFromGroupOpenArray: error, the open isn't in the group open list.\n");)
 	TRACE_EXIT();
 }
 
@@ -1320,9 +1212,9 @@ NPF_EqualAdapterName(
 //-------------------------------------------------------------------
 
 POPEN_INSTANCE
-NPF_GetCopyFromOpenArray(
+NPF_GetOpenByAdapterName(
 	PNDIS_STRING pAdapterName,
-	PDEVICE_EXTENSION DeviceExtension
+	BOOLEAN Dot11
 	)
 {
 	POPEN_INSTANCE CurOpen;
@@ -1331,63 +1223,26 @@ NPF_GetCopyFromOpenArray(
 	NdisAcquireSpinLock(&g_OpenArrayLock);
 	for (CurOpen = g_arrOpen; CurOpen != NULL; CurOpen = CurOpen->Next)
 	{
-		if (CurOpen->AdapterBindingStatus == ADAPTER_BOUND && NPF_EqualAdapterName(&CurOpen->AdapterName, pAdapterName) == TRUE)
+		if (NPF_StartUsingBinding(CurOpen) == FALSE)
 		{
+			continue;
+		}
+
+		if (NPF_EqualAdapterName(&CurOpen->AdapterName, pAdapterName) && CurOpen->Dot11 == Dot11)
+		{
+			NPF_StopUsingBinding(CurOpen);
 			NdisReleaseSpinLock(&g_OpenArrayLock);
-			return NPF_DuplicateOpenObject(CurOpen, DeviceExtension);
+			return CurOpen;
+		}
+		else
+		{
+			NPF_StopUsingBinding(CurOpen);
 		}
 	}
 	NdisReleaseSpinLock(&g_OpenArrayLock);
 
 	TRACE_EXIT();
 	return NULL;
-}
-
-//-------------------------------------------------------------------
-
-void
-NPF_RemoveUnclosedAdapters(
-	)
-{
-	POPEN_INSTANCE CurOpen;
-	POPEN_INSTANCE Open;
-	POPEN_INSTANCE TempOpen;
-	BOOLEAN NoDirectedBindedRemaining = TRUE;
-	TRACE_ENTER();
-
-// 	for (CurOpen = g_arrOpen; CurOpen != NULL; CurOpen = CurOpen->Next)
-// 	{
-// 		if (CurOpen->DirectBinded)
-// 		{
-// 			NoDirectedBindedRemaining = FALSE;
-// 		}
-// 	}
-//
-// 	if (NoDirectedBindedRemaining)
-// 	{
-// 		for (CurOpen = g_arrOpen; CurOpen != NULL;)
-// 		{
-// 			TempOpen = CurOpen->Next;
-// 			NPF_CleanupForUnclosed(CurOpen);
-// 			NPF_CloseAdapterForUnclosed(CurOpen);
-// 			CurOpen = TempOpen;
-// 		}
-// 	}
-
-	NdisAcquireSpinLock(&g_OpenArrayLock);
-	for (CurOpen = g_arrOpen; CurOpen != NULL;)
-	{
-		TempOpen = CurOpen->Next;
-		if (CurOpen->DirectBinded)
-		{
-			NPF_CleanupForUnclosed(CurOpen);
-			NPF_CloseAdapterForUnclosed(CurOpen);
-		}
-		CurOpen = TempOpen;
-	}
-	NdisReleaseSpinLock(&g_OpenArrayLock);
-
-	TRACE_EXIT();
 }
 
 //-------------------------------------------------------------------
@@ -1407,6 +1262,9 @@ NPF_DuplicateOpenObject(
 	Open->MaxFrameSize = OriginalOpen->MaxFrameSize;
 #ifdef HAVE_WFP_LOOPBACK_SUPPORT
 	Open->Loopback = OriginalOpen->Loopback;
+#endif
+#ifdef HAVE_DOT11_SUPPORT
+	Open->Dot11 = OriginalOpen->Dot11;
 #endif
 
 #ifdef HAVE_RX_SUPPORT
@@ -1456,6 +1314,8 @@ NPF_CreateOpenObject(
 #endif
 
 #ifdef HAVE_DOT11_SUPPORT
+	Open->Dot11 = FALSE;
+	Open->Dot11PacketFilter = 0x0;
 	Open->HasDataRateMappingTable = FALSE;
 #endif
 
@@ -1580,7 +1440,7 @@ NPF_CreateOpenObject(
 _Use_decl_annotations_
 NDIS_STATUS
 NPF_RegisterOptions(
-	NDIS_HANDLE  NdisFilterDriverHandle,
+	NDIS_HANDLE  NdisFilterHandle,
 	NDIS_HANDLE  FilterDriverContext
 	)
 /*++
@@ -1608,12 +1468,10 @@ Return Value:
 {
 	TRACE_ENTER();
 
-	ASSERT(NdisFilterDriverHandle == FilterDriverHandle);
 	ASSERT(FilterDriverContext == (NDIS_HANDLE)FilterDriverObject);
-
-	if ((NdisFilterDriverHandle != (NDIS_HANDLE)FilterDriverHandle) ||
-		(FilterDriverContext != (NDIS_HANDLE)FilterDriverObject))
+	if (FilterDriverContext != (NDIS_HANDLE)FilterDriverObject)
 	{
+		IF_LOUD(DbgPrint("NPF_RegisterOptions: driver doesn't match error, FilterDriverContext = %p, FilterDriverObject = %p.\n", FilterDriverContext, FilterDriverObject);)
 		return NDIS_STATUS_INVALID_PARAMETER;
 	}
 
@@ -1635,8 +1493,9 @@ NPF_AttachAdapter(
 	POPEN_INSTANCE			Open = NULL;
 	NDIS_STATUS             Status;
 	NDIS_STATUS				returnStatus;
-	NDIS_FILTER_ATTRIBUTES  FilterAttributes;
-	BOOLEAN               bFalse = FALSE;
+	NDIS_FILTER_ATTRIBUTES	FilterAttributes;
+	BOOLEAN					bFalse = FALSE;
+	BOOLEAN					bDot11;
 
 	TRACE_ENTER();
 
@@ -1672,6 +1531,56 @@ NPF_AttachAdapter(
 			break;
 		}
 
+		// An example:
+		// AdapterName = "\DEVICE\{4F4B4BD7-340D-45D3-8F59-8A1E167BC75D}"
+		// FilterModuleGuidName = "{4F4B4BD7-340D-45D3-8F59-8A1E167BC75D}-{7DAF2AC8-E9F6-4765-A842-F1F5D2501351}-0000"
+		IF_LOUD(DbgPrint("NPF_AttachAdapter: AdapterName=%ws, MacAddress=%02X-%02X-%02X-%02X-%02X-%02X, MiniportMediaType=%d\n",
+			AttachParameters->BaseMiniportName->Buffer,
+			AttachParameters->CurrentMacAddress[0],
+			AttachParameters->CurrentMacAddress[1],
+			AttachParameters->CurrentMacAddress[2],
+			AttachParameters->CurrentMacAddress[3],
+			AttachParameters->CurrentMacAddress[4],
+			AttachParameters->CurrentMacAddress[5],
+			AttachParameters->MiniportMediaType);
+		);
+
+		IF_LOUD(DbgPrint("NPF_AttachAdapter: FilterModuleGuidName=%ws, FilterModuleGuidName[%d]=%d\n",
+			AttachParameters->FilterModuleGuidName->Buffer,
+			SECOND_LAST_HEX_INDEX_OF_FILTER_UNIQUE_NAME,
+			AttachParameters->FilterModuleGuidName->Buffer[SECOND_LAST_HEX_INDEX_OF_FILTER_UNIQUE_NAME]);
+		);
+
+		if (AttachParameters->FilterModuleGuidName->Buffer[SECOND_LAST_HEX_INDEX_OF_FILTER_UNIQUE_NAME] == L'4')
+		{
+			IF_LOUD(DbgPrint("NPF_AttachAdapter: This is the standard filter binding!\n");)
+			bDot11 = FALSE;
+		}
+		else if (AttachParameters->FilterModuleGuidName->Buffer[SECOND_LAST_HEX_INDEX_OF_FILTER_UNIQUE_NAME] == L'5')
+		{
+			IF_LOUD(DbgPrint("NPF_AttachAdapter: This is the WiFi filter binding!\n");)
+			bDot11 = TRUE;
+		}
+		else
+		{
+			IF_LOUD(DbgPrint("NPF_AttachAdapter: error, unrecognized filter binding!\n");)
+
+			returnStatus = NDIS_STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		// The WiFi filter will only bind to the 802.11 wirelress adapters.
+		if (g_Dot11SupportMode && bDot11)
+		{
+			if (AttachParameters->MiniportMediaType != NdisMediumNative802_11)
+			{
+				IF_LOUD(DbgPrint("Unsupported media type for the WiFi filter: MiniportMediaType = %d, expected = 16 (NdisMediumNative802_11).\n", AttachParameters->MiniportMediaType);)
+
+				returnStatus = NDIS_STATUS_INVALID_PARAMETER;
+				break;
+			}
+		}
+
 		// Disable this code for now, because it invalidates most adapters to be bound, reason needs to be clarified.
 // 		if (AttachParameters->LowerIfIndex != AttachParameters->BaseMiniportIfIndex)
 // 		{
@@ -1680,16 +1589,6 @@ NPF_AttachAdapter(
 // 			returnStatus = NDIS_STATUS_NOT_SUPPORTED;
 // 			break;
 // 		}
-
-		IF_LOUD(DbgPrint("NPF_Attach: AdapterName=%ws, MacAddress=%02X-%02X-%02X-%02X-%02X-%02X\n",
-			AttachParameters->BaseMiniportName->Buffer,
-			AttachParameters->CurrentMacAddress[0],
-			AttachParameters->CurrentMacAddress[1],
-			AttachParameters->CurrentMacAddress[2],
-			AttachParameters->CurrentMacAddress[3],
-			AttachParameters->CurrentMacAddress[4],
-			AttachParameters->CurrentMacAddress[5]);
-		)
 
 		// create the adapter object
 		Open = NPF_CreateOpenObject(AttachParameters->BaseMiniportName, AttachParameters->MiniportMediaType, NULL);
@@ -1717,7 +1616,7 @@ NPF_AttachAdapter(
 		}
 		else
 		{
-			IF_LOUD(DbgPrint("NPF_Attach: g_LoopbackAdapterName.Buffer=NULL\n");)
+			IF_LOUD(DbgPrint("NPF_AttachAdapter: g_LoopbackAdapterName.Buffer=NULL\n");)
 		}
 #endif
 
@@ -1764,19 +1663,6 @@ NPF_AttachAdapter(
 		}
 #endif
 
-#ifdef HAVE_WFP_LOOPBACK_SUPPORT
-		TRACE_MESSAGE3(PACKET_DEBUG_LOUD,
-			"Opening the device %ws, BindingContext=%p, Loopback=%d",
-			AttachParameters->BaseMiniportName->Buffer,
-			Open,
-			Open->Loopback? 1 : 0);
-#else
-		TRACE_MESSAGE2(PACKET_DEBUG_LOUD,
-			"Opening the device %ws, BindingContext=%p, Loopback=<Not supported>",
-			AttachParameters->BaseMiniportName->Buffer,
-			Open);
-#endif
-
 		returnStatus = STATUS_SUCCESS;
 
 		NdisZeroMemory(&FilterAttributes, sizeof(NDIS_FILTER_ATTRIBUTES));
@@ -1793,7 +1679,7 @@ NPF_AttachAdapter(
 		if (Status != NDIS_STATUS_SUCCESS)
 		{
 			returnStatus = Status;
-			IF_LOUD(DbgPrint("Failed to set attributes.\n");)
+			IF_LOUD(DbgPrint("NdisFSetAttributes: error, Status=%x.\n", Status);)
 			NPF_ReleaseOpenInstanceResources(Open);
 			//
 			// Free the open instance itself
@@ -1804,24 +1690,44 @@ NPF_AttachAdapter(
 		{
 			Open->AdapterHandle = NdisFilterHandle;
 			Open->HigherPacketFilter = NPF_GetPacketFilter(Open);
-			TRACE_MESSAGE2(PACKET_DEBUG_LOUD,
-				"Opened the device, Status=%x, HigherPacketFilter=%x",
-				Status,
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+				"HigherPacketFilter=%x",
 				Open->HigherPacketFilter);
 
+			Open->PhysicalMedium = NPF_GetPhysicalMedium(Open);
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD,
+				"PhysicalMedium=%x",
+				Open->PhysicalMedium);
+
 #ifdef HAVE_DOT11_SUPPORT
-			if (Open->Medium == NdisMediumNative802_11)
+			if (g_Dot11SupportMode && bDot11)
 			{
 				// Handling raw 802.11 packets need to set NDIS_PACKET_TYPE_802_11_RAW_DATA and NDIS_PACKET_TYPE_802_11_RAW_MGMT in the packet filter.
+				Open->Dot11 = bDot11;
 				Open->Dot11PacketFilter = NDIS_PACKET_TYPE_802_11_RAW_DATA | NDIS_PACKET_TYPE_802_11_RAW_MGMT;
 				ULONG combinedPacketFilter = Open->HigherPacketFilter | Open->MyPacketFilter | Open->Dot11PacketFilter;
 				Status = NPF_SetPacketFilter(Open, combinedPacketFilter);
-			}
 
-			TRACE_MESSAGE2(PACKET_DEBUG_LOUD,
-				"NPF_SetPacketFilter, Status=%x, Dot11PacketFilter=%x",
-				Status,
-				Open->Dot11PacketFilter);
+				TRACE_MESSAGE2(PACKET_DEBUG_LOUD,
+					"NPF_SetPacketFilter, Status=%x, Dot11PacketFilter=%x",
+					Status,
+					Open->Dot11PacketFilter);
+			}
+#endif
+
+#ifdef HAVE_WFP_LOOPBACK_SUPPORT
+			TRACE_MESSAGE4(PACKET_DEBUG_LOUD,
+				"Opened the device %ws, BindingContext=%p, Loopback=%d, dot11=%d",
+				AttachParameters->BaseMiniportName->Buffer,
+				Open,
+				Open->Loopback,
+				Open->Dot11);
+#else
+			TRACE_MESSAGE3(PACKET_DEBUG_LOUD,
+				"Opened the device %ws, BindingContext=%p, Loopback=<Not supported>, dot11=%d",
+				AttachParameters->BaseMiniportName->Buffer,
+				Open,
+				Open->Dot11);
 #endif
 
 			returnStatus = STATUS_SUCCESS;
@@ -1830,6 +1736,7 @@ NPF_AttachAdapter(
 	}
 	while (bFalse);
 
+	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "returnStatus=%x", returnStatus);
 	TRACE_EXIT();
 	return returnStatus;
 }
@@ -1845,25 +1752,16 @@ NPF_Pause(
 {
 	POPEN_INSTANCE          Open = (POPEN_INSTANCE)FilterModuleContext;
 	POPEN_INSTANCE			GroupOpen;
-	NDIS_STATUS             Status;
+	NDIS_STATUS             Status = NDIS_STATUS_SUCCESS;
 
 	UNREFERENCED_PARAMETER(PauseParameters);
 	TRACE_ENTER();
 
-	for (GroupOpen = Open->GroupNext; GroupOpen != NULL; GroupOpen = GroupOpen->GroupNext)
-	{
-		if (GroupOpen->Multiple_Write_Counter > 0 || GroupOpen->TransmitPendingPackets > 0)
-		{
-			NdisAcquireSpinLock(&GroupOpen->OpenInUseLock);
-			GroupOpen->PausePending = TRUE;
-			NdisReleaseSpinLock(&GroupOpen->OpenInUseLock);
-			Status = NDIS_STATUS_PENDING;
-		}
-		else
-		{
-			Status = NDIS_STATUS_SUCCESS;
-		}
-	}
+	NdisAcquireSpinLock(&Open->AdapterHandleLock);
+	Open->PausePending = TRUE;
+	NdisReleaseSpinLock(&Open->AdapterHandleLock);
+
+	Status = NDIS_STATUS_SUCCESS;
 	
 	TRACE_EXIT();
 	return Status;
@@ -1926,12 +1824,9 @@ NPF_Restart(
 		NdisFIndicateStatus(Open->AdapterHandle, &indication);
 	}
 
-	for (GroupOpen = Open->GroupNext; GroupOpen != NULL; GroupOpen = GroupOpen->GroupNext)
-	{
-		NdisAcquireSpinLock(&GroupOpen->OpenInUseLock);
-		GroupOpen->PausePending = FALSE;
-		NdisReleaseSpinLock(&GroupOpen->OpenInUseLock);
-	}
+	NdisAcquireSpinLock(&Open->AdapterHandleLock);
+	Open->PausePending = FALSE;
+	NdisReleaseSpinLock(&Open->AdapterHandleLock);
 
 	Status = NDIS_STATUS_SUCCESS;
 	TRACE_EXIT();
@@ -1970,20 +1865,27 @@ NOTE: Called at PASSIVE_LEVEL and the filter is in paused state
 
 	TRACE_ENTER();
 
-	// 	if (Open->ReadEvent != NULL)
-	// 		KeSetEvent(Open->ReadEvent,0,FALSE);
 	for (GroupOpen = Open->GroupNext; GroupOpen != NULL; GroupOpen = GroupOpen->GroupNext)
 	{
+		NPF_CloseOpenInstance(GroupOpen);
+
 		if (GroupOpen->ReadEvent != NULL)
 			KeSetEvent(GroupOpen->ReadEvent, 0, FALSE);
-		NPF_CloseBindingAndAdapter(GroupOpen);
 	}
 
-	NPF_RemoveFromOpenArray(Open); //Must add this, if not, SYSTEM_SERVICE_EXCEPTION BSoD will occur.
-	//NPF_ReleaseOpenInstanceResources(Open);
-	//ExFreePool(Open);
+	NPF_CloseBinding(Open);
 
-	//NPF_RemoveUnclosedAdapters(); //if there are any unclosed adapter objects, just close them
+#ifdef HAVE_WFP_LOOPBACK_SUPPORT
+	// "Npcap Loopback Adapter" is going to be detached, invalidate its global pointer as well. 
+	if (Open->Loopback && Open == g_LoopbackOpenGroupHead)
+	{
+		g_LoopbackOpenGroupHead = NULL;
+	}
+#endif
+
+	NPF_RemoveFromOpenArray(Open); // Must add this, if not, SYSTEM_SERVICE_EXCEPTION BSoD will occur.
+	NPF_ReleaseOpenInstanceResources(Open);
+	ExFreePool(Open);
 
 	TRACE_EXIT();
 	return;
@@ -2212,7 +2114,7 @@ Arguments:
 	//
 	if (OriginalRequest == NULL)
 	{
-		TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Status= %p", Status);
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Status = %p", Status);
 		NPF_InternalRequestComplete(Open, Request, Status);
 		TRACE_EXIT();
 		return;
@@ -2543,10 +2445,49 @@ Return Value:
 //-------------------------------------------------------------------
 
 ULONG
+NPF_GetPhysicalMedium(
+	NDIS_HANDLE FilterModuleContext
+)
+{
+	TRACE_ENTER();
+
+	ULONG PhysicalMedium = 0;
+	ULONG BytesProcessed = 0;
+
+	// get the PhysicalMedium when filter driver loads
+	NPF_DoInternalRequest(FilterModuleContext,
+		NdisRequestQueryInformation,
+		OID_GEN_PHYSICAL_MEDIUM,
+		&PhysicalMedium,
+		sizeof(PhysicalMedium),
+		0,
+		0,
+		&BytesProcessed
+	);
+
+	if (BytesProcessed != sizeof(PhysicalMedium))
+	{
+		IF_LOUD(DbgPrint("BytesProcessed != sizeof(PhysicalMedium), BytesProcessed = %x, sizeof(PhysicalMedium) = %x\n", BytesProcessed, sizeof(PhysicalMedium));)
+			TRACE_EXIT();
+		return 0;
+	}
+	else
+	{
+		TRACE_EXIT();
+		return PhysicalMedium;
+	}
+}
+
+
+//-------------------------------------------------------------------
+
+ULONG
 NPF_GetPacketFilter(
 	NDIS_HANDLE FilterModuleContext
 	)
 {
+	TRACE_ENTER();
+
 	ULONG PacketFilter = 0;
 	ULONG BytesProcessed = 0;
 
@@ -2563,10 +2504,13 @@ NPF_GetPacketFilter(
 
 	if (BytesProcessed != sizeof(PacketFilter))
 	{
+		IF_LOUD(DbgPrint("BytesProcessed != sizeof(PacketFilter), BytesProcessed = %x, sizeof(PacketFilter) = %x\n", BytesProcessed, sizeof(PacketFilter));)
+		TRACE_EXIT();
 		return 0;
 	}
 	else
 	{
+		TRACE_EXIT();
 		return PacketFilter;
 	}
 }
@@ -2579,6 +2523,8 @@ NPF_SetPacketFilter(
 	ULONG PacketFilter
 )
 {
+	TRACE_ENTER();
+
 	NDIS_STATUS Status;
 	ULONG BytesProcessed = 0;
 
@@ -2595,13 +2541,16 @@ NPF_SetPacketFilter(
 
 	if (BytesProcessed != sizeof(PacketFilter))
 	{
-		Status = NDIS_STATUS_SUCCESS;
+		IF_LOUD(DbgPrint("BytesProcessed != sizeof(PacketFilter), BytesProcessed = %x, sizeof(PacketFilter) = %x\n", BytesProcessed, sizeof(PacketFilter));)
+		TRACE_EXIT();
+		Status = NDIS_STATUS_FAILURE;
 		return Status;
 	}
 	else
 	{
-		Status = NDIS_STATUS_FAILURE;
-		return TRUE;
+		TRACE_EXIT();
+		Status = NDIS_STATUS_SUCCESS;
+		return Status;
 	}
 }
 
@@ -2620,12 +2569,13 @@ NPF_DoInternalRequest(
 	_Out_ PULONG                      pBytesProcessed
 	)
 {
+	TRACE_ENTER();
+
 	POPEN_INSTANCE				Open = (POPEN_INSTANCE) FilterModuleContext;
 	INTERNAL_REQUEST            FilterRequest;
 	PNDIS_OID_REQUEST           NdisRequest = &FilterRequest.Request;
-	NDIS_STATUS                 Status;
+	NDIS_STATUS                 Status = NDIS_STATUS_FAILURE;
 	BOOLEAN                     bFalse;
-
 
 	bFalse = FALSE;
 	*pBytesProcessed = 0;
@@ -2647,51 +2597,43 @@ NPF_DoInternalRequest(
 	switch (RequestType)
 	{
 		case NdisRequestQueryInformation:
-			 NdisRequest->DATA.QUERY_INFORMATION.Oid = Oid;
-			 NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer =
-									InformationBuffer;
-			 NdisRequest->DATA.QUERY_INFORMATION.InformationBufferLength =
-									InformationBufferLength;
+			NdisRequest->DATA.QUERY_INFORMATION.Oid = Oid;
+			NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer = InformationBuffer;
+			NdisRequest->DATA.QUERY_INFORMATION.InformationBufferLength = InformationBufferLength;
 			break;
 
 		case NdisRequestSetInformation:
-			 NdisRequest->DATA.SET_INFORMATION.Oid = Oid;
-			 NdisRequest->DATA.SET_INFORMATION.InformationBuffer =
-									InformationBuffer;
-			 NdisRequest->DATA.SET_INFORMATION.InformationBufferLength =
-									InformationBufferLength;
+			NdisRequest->DATA.SET_INFORMATION.Oid = Oid;
+			NdisRequest->DATA.SET_INFORMATION.InformationBuffer = InformationBuffer;
+			NdisRequest->DATA.SET_INFORMATION.InformationBufferLength = InformationBufferLength;
 			break;
 
 		case NdisRequestMethod:
-			 NdisRequest->DATA.METHOD_INFORMATION.Oid = Oid;
-			 NdisRequest->DATA.METHOD_INFORMATION.MethodId = MethodId;
-			 NdisRequest->DATA.METHOD_INFORMATION.InformationBuffer =
-									InformationBuffer;
-			 NdisRequest->DATA.METHOD_INFORMATION.InputBufferLength =
-									InformationBufferLength;
-			 NdisRequest->DATA.METHOD_INFORMATION.OutputBufferLength = OutputBufferLength;
-			 break;
-
-
+			NdisRequest->DATA.METHOD_INFORMATION.Oid = Oid;
+			NdisRequest->DATA.METHOD_INFORMATION.MethodId = MethodId;
+			NdisRequest->DATA.METHOD_INFORMATION.InformationBuffer = InformationBuffer;
+			NdisRequest->DATA.METHOD_INFORMATION.InputBufferLength = InformationBufferLength;
+			NdisRequest->DATA.METHOD_INFORMATION.OutputBufferLength = OutputBufferLength;
+			break;
 
 		default:
-			ASSERT(bFalse);
-			break;
+			IF_LOUD(DbgPrint("Unsupported RequestType: %d\n", RequestType);)
+			IF_LOUD(DbgPrint("Status = %x\n", Status);)
+			TRACE_EXIT();
+			return Status;
+			// ASSERT(bFalse);
+			// break;
 	}
 
 	NdisRequest->RequestId = (PVOID)NPF_REQUEST_ID;
 
-	Status = NdisFOidRequest(Open->AdapterHandle,
-							NdisRequest);
-
+	Status = NdisFOidRequest(Open->AdapterHandle, NdisRequest);
 
 	if (Status == NDIS_STATUS_PENDING)
 	{
-
 		NdisWaitEvent(&FilterRequest.InternalRequestCompletedEvent, 0);
 		Status = FilterRequest.RequestStatus;
 	}
-
 
 	if (Status == NDIS_STATUS_SUCCESS)
 	{
@@ -2723,7 +2665,6 @@ NPF_DoInternalRequest(
 		}
 		else
 		{
-
 			if (*pBytesProcessed > InformationBufferLength)
 			{
 				*pBytesProcessed = InformationBufferLength;
@@ -2731,7 +2672,8 @@ NPF_DoInternalRequest(
 		}
 	}
 
-
+	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Status = %p", Status);
+	TRACE_EXIT();
 	return Status;
 }
 
@@ -2773,6 +2715,7 @@ Return Value:
 	// Set the request result
 	//
 	pRequest->RequestStatus = Status;
+	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "pRequest->RequestStatus = Status = %x", Status);
 
 	//
 	// and awake the caller

@@ -1,3 +1,51 @@
+/***********************IMPORTANT NPCAP LICENSE TERMS***********************
+ *                                                                         *
+ * Npcap is a Windows packet sniffing driver and library and is copyright  *
+ * (c) 2013-2016 by Insecure.Com LLC ("The Nmap Project").  All rights     *
+ * reserved.                                                               *
+ *                                                                         *
+ * Even though Npcap source code is publicly available for review, it is   *
+ * not open source software and my not be redistributed or incorporated    *
+ * into other software without special permission from the Nmap Project.   *
+ * We fund the Npcap project by selling a commercial license which allows  *
+ * companies to redistribute Npcap with their products and also provides   *
+ * for support, warranty, and indemnification rights.  For details on      *
+ * obtaining such a license, please contact:                               *
+ *                                                                         *
+ * sales@nmap.com                                                          *
+ *                                                                         *
+ * Free and open source software producers are also welcome to contact us  *
+ * for redistribution requests.  However, we normally recommend that such  *
+ * authors instead ask your users to download and install Npcap            *
+ * themselves.                                                             *
+ *                                                                         *
+ * Since the Npcap source code is available for download and review,       *
+ * users sometimes contribute code patches to fix bugs or add new          *
+ * features.  By sending these changes to the Nmap Project (including      *
+ * through direct email or our mailing lists or submitting pull requests   *
+ * through our source code repository), it is understood unless you        *
+ * specify otherwise that you are offering the Nmap Project the            *
+ * unlimited, non-exclusive right to reuse, modify, and relicence your     *
+ * code contribution so that we may (but are not obligated to)             *
+ * incorporate it into Npcap.  If you wish to specify special license      *
+ * conditions or restrictions on your contributions, just say so when you  *
+ * send them.                                                              *
+ *                                                                         *
+ * This software is distributed in the hope that it will be useful, but    *
+ * WITHOUT ANY WARRANTY; without even the implied warranty of              *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    *
+ *                                                                         *
+ * Other copyright notices and attribution may appear below this license   *
+ * header. We have kept those for attribution purposes, but any license    *
+ * terms granted by those notices apply only to their original work, and   *
+ * not to any changes made by the Nmap Project or to this entire file.     *
+ *                                                                         *
+ * This header summarizes a few important aspects of the Npcap license,    *
+ * but is not a substitute for the full Npcap license agreement, which is  *
+ * in the LICENSE file included with Npcap and also available at           *
+ * https://github.com/nmap/npcap/blob/master/LICENSE.                      *
+ *                                                                         *
+ ***************************************************************************/
 /*
  * Copyright (c) 1999 - 2005 NetGroup, Politecnico di Torino (Italy)
  * Copyright (c) 2005 - 2010 CACE Technologies, Davis (California)
@@ -54,8 +102,6 @@
 #pragma NDIS_INIT_FUNCTION(DriverEntry)
 #endif // ALLOC_PRAGMA
 
-#define				FILTER_UNIQUE_NAME		L"{7daf2ac8-e9f6-4765-a842-f1f5d2501340}"
-
 #if DBG
 // Declare the global debug flag for this driver.
 ULONG PacketDebugFlag = PACKET_DEBUG_LOUD;
@@ -68,6 +114,7 @@ PDEVICE_EXTENSION GlobalDeviceExtension;
 // Global strings
 //
 WCHAR g_NPF_PrefixBuffer[MAX_WINPCAP_KEY_CHARS] = NPF_DEVICE_NAMES_PREFIX_WIDECHAR;
+WCHAR g_NPF_PrefixBuffer_Wifi[MAX_WINPCAP_KEY_CHARS] = NPF_DEVICE_NAMES_PREFIX_WIDECHAR_WIFI;
 
 POPEN_INSTANCE g_arrOpen = NULL; //Adapter OPEN_INSTANCE list head, each list item is a group head.
 NDIS_SPIN_LOCK g_OpenArrayLock; //The lock for adapter OPEN_INSTANCE list.
@@ -95,6 +142,7 @@ NDIS_STRING g_BlockRxRegValueName = NDIS_STRING_CONST("BlockRxAdapters");
 #endif
 
 NDIS_STRING g_NPF_Prefix;
+NDIS_STRING g_NPF_Prefix_WIFI;
 NDIS_STRING devicePrefix = NDIS_STRING_CONST("\\Device\\");
 NDIS_STRING symbolicLinkPrefix = NDIS_STRING_CONST("\\DosDevices\\");
 NDIS_STRING tcpLinkageKeyName = NDIS_STRING_CONST("\\Registry\\Machine\\System"
@@ -105,11 +153,13 @@ NDIS_STRING bindValueName = NDIS_STRING_CONST("Bind");
 
 NDIS_STRING g_AdminOnlyRegValueName = NDIS_STRING_CONST("AdminOnly");
 NDIS_STRING g_DltNullRegValueName = NDIS_STRING_CONST("DltNull");
+NDIS_STRING g_Dot11SupportRegValueName = NDIS_STRING_CONST("Dot11Support");
 NDIS_STRING g_VlanSupportRegValueName = NDIS_STRING_CONST("VlanSupport");
 NDIS_STRING g_TimestampRegValueName = NDIS_STRING_CONST("TimestampMode");
 
 ULONG g_AdminOnlyMode = 0;
 ULONG g_DltNullMode = 0;
+ULONG g_Dot11SupportMode = 0;
 ULONG g_VlanSupportMode = 0;
 ULONG g_TimestampMode = 0;
 
@@ -121,14 +171,65 @@ ULONG g_NCpu;
 //
 // Global variables
 //
-NDIS_HANDLE         FilterDriverHandle; // NDIS handle for filter driver
-NDIS_HANDLE         FilterDriverObject; // Driver object for filter driver
+NDIS_HANDLE         FilterDriverHandle = NULL;			// NDIS handle for filter driver
+NDIS_HANDLE         FilterDriverHandle_WiFi = NULL;		// NDIS handle for WiFi filter driver
+NDIS_HANDLE         FilterDriverObject;					// Driver object for filter driver
 
 typedef ULONG (*NDISGROUPMAXPROCESSORCOUNT)(
 	USHORT Group
 	);
-NDISGROUPMAXPROCESSORCOUNT MyNdisGroupMaxProcessorCount;
+//KeGetCurrentProcessorNumberEx
+typedef ULONG (*KEGETCURRENTPROCESSORNUMBEREX)(
+	PPROCESSOR_NUMBER ProcNumber
+	);
 
+NDISGROUPMAXPROCESSORCOUNT g_My_NdisGroupMaxProcessorCount = NULL;
+KEGETCURRENTPROCESSORNUMBEREX g_My_KeGetCurrentProcessorNumberEx = NULL;
+
+//-------------------------------------------------------------------
+ULONG
+My_NdisGroupMaxProcessorCount(
+	)
+{
+	ULONG Cpu;
+	if (g_My_NdisGroupMaxProcessorCount) // for NDIS620 and later (Win7 and later).
+	{
+		Cpu = g_My_NdisGroupMaxProcessorCount(ALL_PROCESSOR_GROUPS);
+		if (Cpu > NPF_MAX_CPU_NUMBER - 1)
+		{
+			Cpu = NPF_MAX_CPU_NUMBER - 1;
+		}
+	}
+	else // for NDIS6 (Vista)
+	{
+		Cpu = NdisSystemProcessorCount();
+	}
+	return Cpu;
+}
+
+//-------------------------------------------------------------------
+ULONG
+My_KeGetCurrentProcessorNumber(
+)
+{
+	ULONG Cpu;
+	if (g_My_KeGetCurrentProcessorNumberEx) // for NDIS620 and later (Win7 and later).
+	{
+		Cpu = g_My_KeGetCurrentProcessorNumberEx(NULL);
+		if (Cpu > NPF_MAX_CPU_NUMBER - 1)
+		{
+			Cpu = NPF_MAX_CPU_NUMBER - 1;
+		}
+	}
+	else // for NDIS6 (Vista)
+	{
+		Cpu = KeGetCurrentProcessorNumber();
+	}
+	return Cpu;
+}
+
+
+//-------------------------------------------------------------------
 //
 //  Packet Driver's entry routine.
 //
@@ -139,20 +240,22 @@ DriverEntry(
 	IN PUNICODE_STRING RegistryPath
 	)
 {
-	NDIS_FILTER_DRIVER_CHARACTERISTICS FChars;
+	NDIS_FILTER_DRIVER_CHARACTERISTICS FChars; // The specification for the filter.
+	NDIS_FILTER_DRIVER_CHARACTERISTICS FChars_WiFi; // The specification for the WiFi filter.
 	NTSTATUS Status = STATUS_SUCCESS;
 
 	// Use NonPaged Pool instead of No-Execute (NX) Nonpaged Pool for Win8 and later, this is for security purpose.
 	ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
-
-	NDIS_STRING FriendlyName = RTL_CONSTANT_STRING(NPF_SERVICE_DESC_WIDECHAR); //display name
-	NDIS_STRING UniqueName = RTL_CONSTANT_STRING(FILTER_UNIQUE_NAME); //unique name, quid name
-	NDIS_STRING ServiceName = RTL_CONSTANT_STRING(NPF_DRIVER_NAME_SMALL_WIDECHAR); //this to match the service name in the INF
+	
 	WCHAR* bindT;
 	PKEY_VALUE_PARTIAL_INFORMATION tcpBindingsP;
-	UNICODE_STRING macName;
+	UNICODE_STRING AdapterName;
 	ULONG OsMajorVersion, OsMinorVersion;
-	NDIS_STRING GroupMaxProcessorCount;
+
+	NDIS_STRING strNdisGroupMaxProcessorCount;
+	NDIS_STRING strKeGetCurrentProcessorNumberEx;
+	NDIS_STRING strKeGetProcessorIndexFromNumber;
+
 	UNREFERENCED_PARAMETER(RegistryPath);
 
 	TRACE_ENTER();
@@ -161,67 +264,84 @@ DriverEntry(
 	PsGetVersion(&OsMajorVersion, &OsMinorVersion, NULL, NULL);
 	TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "OS Version: %d.%d\n", OsMajorVersion, OsMinorVersion);
 
+	// Get the AdminOnly option, if AdminOnly=1, devices will be created with the safe SDDL, to make sure only Administrators can use Npcap driver.
+	// If the registry key doesn't exist, we view it as AdminOnly=0, so no protect to the driver access.
+	g_AdminOnlyMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_AdminOnlyRegValueName);
+	// Get the DltNull option, if DltNull=1, loopback traffic will be DLT_NULL/DLT_LOOP style, including captured and sent packets.
+	// If the registry key doesn't exist, we view it as DltNull=0, so loopback traffic are Ethernet packets.
+	g_DltNullMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_DltNullRegValueName);
+	// Get the Dot11Support option, if Dot11Support=1, Npcap driver will enable the raw 802.11 functions.
+	// If the registry key doesn't exist, we view it as Dot11Support=1, so has raw 802.11 support.
+	g_Dot11SupportMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_Dot11SupportRegValueName);
+	// Get the VlanSupport option, if VlanSupport=1, Npcap driver will try to recognize 802.1Q VLAN tag when capturing and sending data.
+	// If the registry key doesn't exist, we view it as VlanSupport=0, so no VLAN support.
+	g_VlanSupportMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_VlanSupportRegValueName);
+	// Get the TimestampMode option. The meanings of its values is described in time_calls.h.
+	// If the registry key doesn't exist, we view it as TimestampMode=0, so the default "QueryPerformanceCounter" timestamp gathering method.
+	g_TimestampMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_TimestampRegValueName);
+
+#ifdef HAVE_WFP_LOOPBACK_SUPPORT
+	NPF_GetRegistryOption_String(RegistryPath, &g_LoopbackRegValueName, &g_LoopbackAdapterName);
+	if (g_LoopbackAdapterName.Buffer != NULL && g_LoopbackAdapterName.Length != ADAPTER_NAME_SIZE * 2)
+	{
+		TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "g_LoopbackAdapterName is invalid, g_LoopbackAdapterName.Length = %d, ADAPTER_NAME_SIZE * 2 = %d\n",
+			g_LoopbackAdapterName.Length, ADAPTER_NAME_SIZE * 2);
+		ExFreePool(g_LoopbackAdapterName.Buffer);
+		g_LoopbackAdapterName.Buffer = NULL;
+		g_LoopbackAdapterName.Length = 0;
+		g_LoopbackAdapterName.MaximumLength = 0;
+	}
+#endif
+#ifdef HAVE_RX_SUPPORT
+	NPF_GetRegistryOption_String(RegistryPath, &g_SendToRxRegValueName, &g_SendToRxAdapterName);
+	NPF_GetRegistryOption_String(RegistryPath, &g_BlockRxRegValueName, &g_BlockRxAdapterName);
+#endif
+
+	// RegistryPath = "\REGISTRY\MACHINE\SYSTEM\ControlSet001\Services\npcap" for standard driver
+	// RegistryPath = "\REGISTRY\MACHINE\SYSTEM\ControlSet001\Services\npcap_wifi" for WiFi driver
+
+	//
+	// The Dot11 support is determined by whether the service is "npcap" or "npcap_wifi"
+	//
+// 	g_Dot11SupportMode = 0;
+// 	for (USHORT i = 0; i < RegistryPath->Length / 2; i ++)
+// 	{
+// 		if (RegistryPath->Buffer[i] == L'_')
+// 		{
+// 			g_Dot11SupportMode = 1;
+// 			break;
+// 		}
+// 	}
+// 	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "g_Dot11SupportMode (based on RegistryPath) = %d\n", g_Dot11SupportMode);
+
+	// g_NPF_PrefixBuffer = "NPCAP_"
 	NdisInitUnicodeString(&g_NPF_Prefix, g_NPF_PrefixBuffer);
+
+	// g_NPF_PrefixBuffer_Wifi = "NPCAP_WIFI_"
+	if (g_Dot11SupportMode)
+		NdisInitUnicodeString(&g_NPF_Prefix_WIFI, g_NPF_PrefixBuffer_Wifi);
+
+	//
+	// Initialize several CPU-related functions.
+	//
+	RtlInitUnicodeString(&strNdisGroupMaxProcessorCount, L"NdisGroupMaxProcessorCount");
+	g_My_NdisGroupMaxProcessorCount = (NDISGROUPMAXPROCESSORCOUNT) NdisGetRoutineAddress(&strNdisGroupMaxProcessorCount);
+
+	RtlInitUnicodeString(&strKeGetCurrentProcessorNumberEx, L"KeGetCurrentProcessorNumberEx");
+	g_My_KeGetCurrentProcessorNumberEx = (KEGETCURRENTPROCESSORNUMBEREX) NdisGetRoutineAddress(&strKeGetCurrentProcessorNumberEx);
 
 	//
 	// Get number of CPUs and save it
 	//
-	RtlInitUnicodeString(&GroupMaxProcessorCount, L"NdisGroupMaxProcessorCount");
-	MyNdisGroupMaxProcessorCount = (NDISGROUPMAXPROCESSORCOUNT) NdisGetRoutineAddress(&GroupMaxProcessorCount);
-	if (MyNdisGroupMaxProcessorCount) // for NDIS620 and later (Win7 and later).
-	{
-		g_NCpu = MyNdisGroupMaxProcessorCount(ALL_PROCESSOR_GROUPS);
-		TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "g_NCpu (NdisGroupMaxProcessorCount): %d, NPF_MAX_CPU_NUMBER: %d\n", g_NCpu, NPF_MAX_CPU_NUMBER);
-		if (g_NCpu > NPF_MAX_CPU_NUMBER)
-		{
-			g_NCpu = NPF_MAX_CPU_NUMBER;
-		}
-	}
-	else // for NDIS6 (Vista)
-	{
-		g_NCpu = NdisSystemProcessorCount();
-	}
+	g_NCpu = My_NdisGroupMaxProcessorCount();
+	TRACE_MESSAGE3(PACKET_DEBUG_LOUD, "g_NCpu: %d, NPF_MAX_CPU_NUMBER: %d, g_My_NdisGroupMaxProcessorCount: %x\n", g_NCpu, NPF_MAX_CPU_NUMBER, g_My_NdisGroupMaxProcessorCount);
 
 	//
 	// Register as a service with NDIS
 	//
-	NdisZeroMemory(&FChars, sizeof(NDIS_FILTER_DRIVER_CHARACTERISTICS));
-	FChars.Header.Type = NDIS_OBJECT_TYPE_FILTER_DRIVER_CHARACTERISTICS;
-	FChars.Header.Size = sizeof(NDIS_FILTER_DRIVER_CHARACTERISTICS);
-#if NDIS_SUPPORT_NDIS61
-	FChars.Header.Revision = NDIS_FILTER_CHARACTERISTICS_REVISION_2;
-#else
-	FChars.Header.Revision = NDIS_FILTER_CHARACTERISTICS_REVISION_1;
-#endif
-
-	FChars.MajorNdisVersion = NDIS_FILTER_MAJOR_VERSION; //NDIS version is 6.2 (Windows 7)
-	FChars.MinorNdisVersion = NDIS_FILTER_MINOR_VERSION;
-	FChars.MajorDriverVersion = 1; //Driver version is 1.0
-	FChars.MinorDriverVersion = 0;
-	FChars.Flags = 0;
-
-	FChars.FriendlyName = FriendlyName;
-	FChars.UniqueName = UniqueName;
-	FChars.ServiceName = ServiceName;
-
-	FChars.SetOptionsHandler = NPF_RegisterOptions;
-	FChars.AttachHandler = NPF_AttachAdapter;
-	FChars.DetachHandler = NPF_DetachAdapter;
-	FChars.RestartHandler = NPF_Restart;
-	FChars.PauseHandler = NPF_Pause;
-	FChars.SetFilterModuleOptionsHandler = NPF_SetModuleOptions;
-	FChars.OidRequestHandler = NPF_OidRequest;
-	FChars.OidRequestCompleteHandler = NPF_OidRequestComplete;
-	FChars.CancelOidRequestHandler = NPF_CancelOidRequest;
-
-	FChars.SendNetBufferListsHandler = NPF_SendEx;
-	FChars.ReturnNetBufferListsHandler = NPF_ReturnEx;
-	FChars.SendNetBufferListsCompleteHandler = NPF_SendCompleteEx;
-	FChars.ReceiveNetBufferListsHandler = NPF_TapEx;
-	FChars.DevicePnPEventNotifyHandler = NPF_DevicePnPEventNotify;
-	FChars.NetPnPEventHandler = NPF_NetPnPEvent;
-	FChars.StatusHandler = NPF_Status;
-	FChars.CancelSendNetBufferListsHandler = NPF_CancelSendNetBufferLists;
+	NPF_registerLWF(&FChars, FALSE);
+	if (g_Dot11SupportMode)
+		NPF_registerLWF(&FChars_WiFi, TRUE);
 
 	DriverObject->DriverUnload = NPF_Unload;
 
@@ -234,27 +354,6 @@ DriverEntry(
 	DriverObject->MajorFunction[IRP_MJ_READ] = NPF_Read;
 	DriverObject->MajorFunction[IRP_MJ_WRITE] = NPF_Write;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = NPF_IoControl;
-
-	// Get the AdminOnly option, if AdminOnly=1, devices will be created with the safe SDDL, to make sure only Administrators can use Npcap driver.
-	// If the registry key doesn't exist, we view it as AdminOnly=0, so no protect to the driver access.
-	g_AdminOnlyMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_AdminOnlyRegValueName);
-	// Get the DltNull option, if DltNull=1, loopback traffic will be DLT_NULL/DLT_LOOP style, including captured and sent packets.
-	// If the registry key doesn't exist, we view it as DltNull=0, so loopback traffic are Ethernet packets.
-	g_DltNullMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_DltNullRegValueName);
-	// Get the VlanSupport option, if VlanSupport=1, Npcap driver will try to recognize 802.1Q VLAN tag when capturing and sending data.
-	// If the registry key doesn't exist, we view it as VlanSupport=0, so no VLAN support.
-	g_VlanSupportMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_VlanSupportRegValueName);
-	// Get the TimestampMode option. The meanings of its values is described in time_calls.h.
-	// If the registry key doesn't exist, we view it as TimestampMode=0, so the default "QueryPerformanceCounter" timestamp gathering method.
-	g_TimestampMode = NPF_GetRegistryOption_Integer(RegistryPath, &g_TimestampRegValueName);
-
-#ifdef HAVE_WFP_LOOPBACK_SUPPORT
-	NPF_GetRegistryOption_String(RegistryPath, &g_LoopbackRegValueName, &g_LoopbackAdapterName);
-#endif
-#ifdef HAVE_RX_SUPPORT
-	NPF_GetRegistryOption_String(RegistryPath, &g_SendToRxRegValueName, &g_SendToRxAdapterName);
-	NPF_GetRegistryOption_String(RegistryPath, &g_BlockRxRegValueName, &g_BlockRxAdapterName);
-#endif
 
 	bindP = getAdaptersList();
 
@@ -278,40 +377,54 @@ DriverEntry(
 		bindT = bindP;
 	}
 
-	for (; *bindT != UNICODE_NULL; bindT += (macName.Length + sizeof(UNICODE_NULL)) / sizeof(WCHAR))
+	for (; *bindT != UNICODE_NULL; bindT += (AdapterName.Length + sizeof(UNICODE_NULL)) / sizeof(WCHAR))
 	{
-		RtlInitUnicodeString(&macName, bindT);
-		NPF_CreateDevice(DriverObject, &macName);
+		RtlInitUnicodeString(&AdapterName, bindT);
+		NPF_CreateDevice(DriverObject, &AdapterName, &g_NPF_Prefix, FALSE);
+		if (g_Dot11SupportMode)
+			NPF_CreateDevice(DriverObject, &AdapterName, &g_NPF_Prefix_WIFI, TRUE);
 	}
 
+	// Register the filter to NDIS.
 	Status = NdisFRegisterFilterDriver(DriverObject,
 		(NDIS_HANDLE) FilterDriverObject,
 		&FChars,
 		&FilterDriverHandle);
 	if (Status != NDIS_STATUS_SUCCESS)
 	{
-		TRACE_MESSAGE(PACKET_DEBUG_LOUD, "Failed to register filter with NDIS.");
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "NdisFRegisterFilterDriver: failed to register filter with NDIS, Status = %x", Status);
 		TRACE_EXIT();
 		return Status;
 	}
+	else
+	{
+		TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "NdisFRegisterFilterDriver: succeed to register filter with NDIS, Status = %x, FilterDriverHandle = %x", Status, FilterDriverHandle);
+	}
 
-// #ifdef HAVE_WFP_LOOPBACK_SUPPORT
-// 	if (DriverObject->DeviceObject)
-// 	{
-// 		Status = NPF_RegisterCallouts(DriverObject->DeviceObject);
-// 		if (!NT_SUCCESS(Status))
-// 		{
-// 			if (gWFPEngineHandle != NULL)
-// 			{
-// 				NPF_UnregisterCallouts();
-//
-// 				NdisFDeregisterFilterDriver(FilterDriverHandle);
-// 			}
-// 			TRACE_EXIT();
-// 			return Status;
-// 		}
-// 	}
-// #endif
+	if (g_Dot11SupportMode)
+	{
+		// Register the WiFi filter to NDIS.
+		Status = NdisFRegisterFilterDriver(DriverObject,
+			(NDIS_HANDLE)FilterDriverObject,
+			&FChars_WiFi,
+			&FilterDriverHandle_WiFi);
+		if (Status != NDIS_STATUS_SUCCESS)
+		{
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "NdisFRegisterFilterDriver: failed to register filter (WiFi) with NDIS, Status = %x", Status);
+
+			// We still run the driver even with the 2nd filter doesn't work.
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "We only use the 1st Filter Handle now, FilterDriverHandle_WiFi = %x.", FilterDriverHandle_WiFi);
+			// NdisFDeregisterFilterDriver(FilterDriverHandle);
+			// TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Deleting the 1st Filter Handle = %p", FilterDriverHandle);
+
+			// TRACE_EXIT();
+			// return Status;
+		}
+		else
+		{
+			TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "NdisFRegisterFilterDriver: succeed to register filter (WiFi) with NDIS, Status = %x, FilterDriverHandle_WiFi = %x", Status, FilterDriverHandle_WiFi);
+		}
+	}
 
 #ifdef HAVE_WFP_LOOPBACK_SUPPORT
 	// Use Winsock Kernel (WSK) to send loopback packets.
@@ -340,6 +453,69 @@ RegistryError:
 	Status = STATUS_UNSUCCESSFUL;
 	TRACE_EXIT();
 	return(Status);
+}
+
+//-------------------------------------------------------------------
+VOID
+NPF_registerLWF(
+	PNDIS_FILTER_DRIVER_CHARACTERISTICS pFChars,
+	BOOLEAN bWiFiOrNot
+	)
+{
+	NDIS_STRING FriendlyName = RTL_CONSTANT_STRING(NPF_SERVICE_DESC_WIDECHAR); // display name
+	NDIS_STRING UniqueName = RTL_CONSTANT_STRING(FILTER_UNIQUE_NAME); // unique name, quid name
+	NDIS_STRING ServiceName = RTL_CONSTANT_STRING(NPF_DRIVER_NAME_SMALL_WIDECHAR); // this to match the service name in the INF
+	NDIS_STRING FriendlyName_WiFi = RTL_CONSTANT_STRING(NPF_SERVICE_DESC_WIDECHAR_WIFI); // display name
+	NDIS_STRING UniqueName_WiFi = RTL_CONSTANT_STRING(FILTER_UNIQUE_NAME_WIFI); // unique name, quid name
+	NDIS_STRING ServiceName_WiFi = RTL_CONSTANT_STRING(NPF_DRIVER_NAME_SMALL_WIDECHAR_WIFI); // this to match the service name in the INF
+
+	NdisZeroMemory(pFChars, sizeof(NDIS_FILTER_DRIVER_CHARACTERISTICS));
+	pFChars->Header.Type = NDIS_OBJECT_TYPE_FILTER_DRIVER_CHARACTERISTICS;
+	pFChars->Header.Size = sizeof(NDIS_FILTER_DRIVER_CHARACTERISTICS);
+#if NDIS_SUPPORT_NDIS61
+	pFChars->Header.Revision = NDIS_FILTER_CHARACTERISTICS_REVISION_2;
+#else
+	pFChars->Header.Revision = NDIS_FILTER_CHARACTERISTICS_REVISION_1;
+#endif
+
+	pFChars->MajorNdisVersion = NDIS_FILTER_MAJOR_VERSION; // NDIS version is 6.2 (Windows 7)
+	pFChars->MinorNdisVersion = NDIS_FILTER_MINOR_VERSION;
+	pFChars->MajorDriverVersion = 1; // Driver version is 1.0
+	pFChars->MinorDriverVersion = 0;
+	pFChars->Flags = 0;
+
+	// Use different names for the WiFi driver.
+	if (bWiFiOrNot)
+	{
+		pFChars->FriendlyName = FriendlyName_WiFi;
+		pFChars->UniqueName = UniqueName_WiFi;
+		pFChars->ServiceName = ServiceName_WiFi;
+	}
+	else
+	{
+		pFChars->FriendlyName = FriendlyName;
+		pFChars->UniqueName = UniqueName;
+		pFChars->ServiceName = ServiceName;
+	}
+
+	pFChars->SetOptionsHandler = NPF_RegisterOptions;
+	pFChars->AttachHandler = NPF_AttachAdapter;
+	pFChars->DetachHandler = NPF_DetachAdapter;
+	pFChars->RestartHandler = NPF_Restart;
+	pFChars->PauseHandler = NPF_Pause;
+	pFChars->SetFilterModuleOptionsHandler = NPF_SetModuleOptions;
+	pFChars->OidRequestHandler = NPF_OidRequest;
+	pFChars->OidRequestCompleteHandler = NPF_OidRequestComplete;
+	pFChars->CancelOidRequestHandler = NPF_CancelOidRequest;
+
+	pFChars->SendNetBufferListsHandler = NPF_SendEx;
+	pFChars->ReturnNetBufferListsHandler = NPF_ReturnEx;
+	pFChars->SendNetBufferListsCompleteHandler = NPF_SendCompleteEx;
+	pFChars->ReceiveNetBufferListsHandler = NPF_TapEx;
+	pFChars->DevicePnPEventNotifyHandler = NPF_DevicePnPEventNotify;
+	pFChars->NetPnPEventHandler = NPF_NetPnPEvent;
+	pFChars->StatusHandler = NPF_Status;
+	pFChars->CancelSendNetBufferListsHandler = NPF_CancelSendNetBufferLists;
 }
 
 //-------------------------------------------------------------------
@@ -613,6 +789,7 @@ NPF_GetRegistryOption_Integer(
 	HANDLE keyHandle;
 
 	TRACE_ENTER();
+	IF_LOUD(DbgPrint("\nRegistryPath: %ws, RegValueName: %ws\n", RegistryPath->Buffer, RegValueName->Buffer);)
 
 	InitializeObjectAttributes(&objAttrs, RegistryPath, OBJ_CASE_INSENSITIVE, NULL, NULL);
 	status = ZwOpenKey(&keyHandle, KEY_READ, &objAttrs);
@@ -703,6 +880,7 @@ NPF_GetRegistryOption_String(
 	HANDLE keyHandle;
 
 	TRACE_ENTER();
+	IF_LOUD(DbgPrint("\nRegistryPath: %ws, RegValueName: %ws\n", RegistryPath->Buffer, RegValueName->Buffer);)
 
 	InitializeObjectAttributes(&objAttrs, RegistryPath, OBJ_CASE_INSENSITIVE, NULL, NULL);
 	status = ZwOpenKey(&keyHandle, KEY_READ, &objAttrs);
@@ -748,9 +926,10 @@ NPF_GetRegistryOption_String(
 
 					g_OutputString->Length = (USHORT)(valueInfoP->DataLength - sizeof(UNICODE_NULL));
 					g_OutputString->MaximumLength = (USHORT)(valueInfoP->DataLength);
-					g_OutputString->Buffer = ExAllocatePoolWithTag(PagedPool, g_OutputString->MaximumLength, '3PWA');
+					g_OutputString->Buffer = ExAllocatePoolWithTag(NonPagedPool, g_OutputString->MaximumLength, '3PWA');
 
-					RtlCopyMemory(g_OutputString->Buffer, valueInfoP->Data, valueInfoP->DataLength);
+					if (g_OutputString->Buffer)
+						RtlCopyMemory(g_OutputString->Buffer, valueInfoP->Data, valueInfoP->DataLength);
 				}
 
 				ExFreePool(valueInfoP);
@@ -771,8 +950,10 @@ NPF_GetRegistryOption_String(
 
 BOOLEAN
 	NPF_CreateDevice(
-	IN OUT PDRIVER_OBJECT adriverObjectP,
-	IN PUNICODE_STRING amacNameP
+	IN OUT PDRIVER_OBJECT DriverObject,
+	IN PUNICODE_STRING AdapterName,
+	IN PUNICODE_STRING NPF_Prefix,
+	IN BOOLEAN Dot11
 	)
 {
 	NTSTATUS status;
@@ -782,15 +963,15 @@ BOOLEAN
 
 	TRACE_ENTER();
 
-	IF_LOUD(DbgPrint("\n\ncreateDevice for MAC %ws\n", amacNameP->Buffer););
-	if (RtlCompareMemory(amacNameP->Buffer, devicePrefix.Buffer, devicePrefix.Length) < devicePrefix.Length)
+	IF_LOUD(DbgPrint("\n\ncreateDevice for MAC %ws\n", AdapterName->Buffer););
+	if (RtlCompareMemory(AdapterName->Buffer, devicePrefix.Buffer, devicePrefix.Length) < devicePrefix.Length)
 	{
 		TRACE_EXIT();
 		return FALSE;
 	}
 
 	deviceName.Length = 0;
-	deviceName.MaximumLength = (USHORT)(amacNameP->Length + g_NPF_Prefix.Length + sizeof(UNICODE_NULL));
+	deviceName.MaximumLength = (USHORT)(AdapterName->Length + NPF_Prefix->Length + sizeof(UNICODE_NULL));
 	deviceName.Buffer = ExAllocatePoolWithTag(PagedPool, deviceName.MaximumLength, '3PWA');
 
 	if (deviceName.Buffer == NULL)
@@ -800,7 +981,7 @@ BOOLEAN
 	}
 
 	deviceSymLink.Length = 0;
-	deviceSymLink.MaximumLength = (USHORT)(amacNameP->Length - devicePrefix.Length + symbolicLinkPrefix.Length + g_NPF_Prefix.Length + sizeof(UNICODE_NULL));
+	deviceSymLink.MaximumLength = (USHORT)(AdapterName->Length - devicePrefix.Length + symbolicLinkPrefix.Length + NPF_Prefix->Length + sizeof(UNICODE_NULL));
 
 	deviceSymLink.Buffer = ExAllocatePoolWithTag(NonPagedPool, deviceSymLink.MaximumLength, '3PWA');
 
@@ -812,12 +993,12 @@ BOOLEAN
 	}
 
 	RtlAppendUnicodeStringToString(&deviceName, &devicePrefix);
-	RtlAppendUnicodeStringToString(&deviceName, &g_NPF_Prefix);
-	RtlAppendUnicodeToString(&deviceName, amacNameP->Buffer + devicePrefix.Length / sizeof(WCHAR));
+	RtlAppendUnicodeStringToString(&deviceName, NPF_Prefix);
+	RtlAppendUnicodeToString(&deviceName, AdapterName->Buffer + devicePrefix.Length / sizeof(WCHAR));
 
 	RtlAppendUnicodeStringToString(&deviceSymLink, &symbolicLinkPrefix);
-	RtlAppendUnicodeStringToString(&deviceSymLink, &g_NPF_Prefix);
-	RtlAppendUnicodeToString(&deviceSymLink, amacNameP->Buffer + devicePrefix.Length / sizeof(WCHAR));
+	RtlAppendUnicodeStringToString(&deviceSymLink, NPF_Prefix);
+	RtlAppendUnicodeToString(&deviceSymLink, AdapterName->Buffer + devicePrefix.Length / sizeof(WCHAR));
 
 	IF_LOUD(DbgPrint("Creating device name: %ws\n", deviceName.Buffer);)
 
@@ -825,12 +1006,12 @@ BOOLEAN
 	{
 		UNICODE_STRING sddl = RTL_CONSTANT_STRING(L"D:P(A;;GA;;;SY)(A;;GA;;;BA)"); // this SDDL means only permits System and Administrator to access the device.
 		const GUID guidClassNPF = { 0x26e0d1e0L, 0x8189, 0x12e0, { 0x99, 0x14, 0x08, 0x00, 0x22, 0x30, 0x19, 0x04 } };
-		status = IoCreateDeviceSecure(adriverObjectP, sizeof(DEVICE_EXTENSION), &deviceName, FILE_DEVICE_TRANSPORT,
+		status = IoCreateDeviceSecure(DriverObject, sizeof(DEVICE_EXTENSION), &deviceName, FILE_DEVICE_TRANSPORT,
 			FILE_DEVICE_SECURE_OPEN, FALSE, &sddl, (LPCGUID)&guidClassNPF, &devObjP);
 	}
 	else
 	{
-		status = IoCreateDevice(adriverObjectP, sizeof(DEVICE_EXTENSION), &deviceName, FILE_DEVICE_TRANSPORT,
+		status = IoCreateDevice(DriverObject, sizeof(DEVICE_EXTENSION), &deviceName, FILE_DEVICE_TRANSPORT,
 			FILE_DEVICE_SECURE_OPEN, FALSE, &devObjP);
 	}
 
@@ -844,7 +1025,7 @@ BOOLEAN
 		// Determine whether this is our loopback adapter for the device.
 		if (g_LoopbackAdapterName.Buffer != NULL)
 		{
-			if (RtlCompareMemory(g_LoopbackAdapterName.Buffer, amacNameP->Buffer, amacNameP->Length) == amacNameP->Length)
+			if (RtlCompareMemory(g_LoopbackAdapterName.Buffer, AdapterName->Buffer, AdapterName->Length) == AdapterName->Length)
 			{
 				g_LoopbackDevObj = devObjP;
 			}
@@ -852,7 +1033,8 @@ BOOLEAN
 #endif
 
 		devObjP->Flags |= DO_DIRECT_IO;
-		RtlInitUnicodeString(&devExtP->AdapterName, amacNameP->Buffer);
+		RtlInitUnicodeString(&devExtP->AdapterName, AdapterName->Buffer);
+		devExtP->Dot11 = Dot11;
 
 		IF_LOUD(DbgPrint("Trying to create SymLink %ws\n", deviceSymLink.Buffer););
 
@@ -896,7 +1078,7 @@ _Use_decl_annotations_
 VOID
 NPF_Unload(
 	IN PDRIVER_OBJECT      DriverObject
-	)
+)
 /*++
 
 Routine Description:
@@ -964,7 +1146,8 @@ Return Value:
 
 		DeviceExtension = OldDeviceObject->DeviceExtension;
 
-		TRACE_MESSAGE4(PACKET_DEBUG_LOUD, "Deleting Adapter %ws, Protocol Handle=%p, Device Obj=%p (%p)", DeviceExtension->AdapterName.Buffer, FilterDriverHandle, DeviceObject, OldDeviceObject);
+		TRACE_MESSAGE3(PACKET_DEBUG_LOUD, "Deleting Adapter %ws, Device Obj=%p (%p)",
+			DeviceExtension->AdapterName.Buffer, DeviceObject, OldDeviceObject);
 
 		if (DeviceExtension->ExportString)
 		{
@@ -980,9 +1163,27 @@ Return Value:
 		IoDeleteDevice(OldDeviceObject);
 	}
 
-	NdisFDeregisterFilterDriver(FilterDriverHandle);
+	if (FilterDriverHandle)
+	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "NdisFDeregisterFilterDriver: Deleting Filter Handle = %p", FilterDriverHandle);
+		NdisFDeregisterFilterDriver(FilterDriverHandle);
+		FilterDriverHandle = NULL;
+	}
+	else
+	{
+		TRACE_MESSAGE(PACKET_DEBUG_LOUD, "NdisFDeregisterFilterDriver: Filter Handle = NULL, no need to delete.");
+	}
 
-	NPF_RemoveUnclosedAdapters();
+	if (FilterDriverHandle_WiFi)
+	{
+		TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "NdisFDeregisterFilterDriver: Deleting Filter Handle (WiFi) = %p", FilterDriverHandle_WiFi);
+		NdisFDeregisterFilterDriver(FilterDriverHandle_WiFi);
+		FilterDriverHandle_WiFi = NULL;
+	}
+	else
+	{
+		TRACE_MESSAGE(PACKET_DEBUG_LOUD, "NdisFDeregisterFilterDriver: Filter Handle (WiFi) = NULL, no need to delete.");
+	}
 
 	// Free the adapters names
 	if (bindP != NULL)
@@ -1024,8 +1225,15 @@ Return Value:
 	Status = STATUS_INSUFFICIENT_RESOURCES; \
 } while(FALSE)
 
+#define SET_FAILURE_CUSTOM(__b__) do{\
+	Information = 0; \
+	Status = __b__; \
+	Status |= 1 << 29; \
+} while(FALSE)
+
 //-------------------------------------------------------------------
 
+_Use_decl_annotations_
 NTSTATUS
 NPF_IoControl(
 	IN PDEVICE_OBJECT DeviceObject,
@@ -1653,6 +1861,13 @@ NPF_IoControl(
 
 		// Get the number of bytes to allocate
 		dim = *((PULONG)Irp->AssociatedIrp.SystemBuffer);
+		
+		// verify that the provided size value is sensible
+		if (dim > NPF_MAX_BUFFER_SIZE)
+		{
+			SET_FAILURE_NOMEM();
+			break;
+		} 
 
 		if (dim / g_NCpu < sizeof(struct PacketHeader))
 		{
@@ -1674,7 +1889,6 @@ NPF_IoControl(
 		//
 		for (i = 0; i < g_NCpu ; i++)
 		{
-#pragma prefast(suppress:8103, "There's no Spinlock leak here, as it's released some lines below.")
 			NdisAcquireSpinLock(&Open->CpuData[i].BufferLock);
 		}
 
@@ -1711,14 +1925,12 @@ NPF_IoControl(
 		//
 		i = g_NCpu;
 
-		do
+		while (i > 0)
 		{
 			i --;
-
-#pragma prefast(suppress:8107, "There's no Spinlock leak here, as it's acquired some lines above.")
+#pragma warning (disable: 28122)
 			NdisReleaseSpinLock(&Open->CpuData[i].BufferLock);
 		}
-		while (i != 0);
 
 		SET_RESULT_SUCCESS(0);
 		break;
@@ -1784,16 +1996,31 @@ NPF_IoControl(
 	case BIOCQUERYOID:
 	case BIOCSETOID:
 
-		TRACE_MESSAGE(PACKET_DEBUG_LOUD, "BIOCSETOID - BIOCQUERYOID");
+		OidData = Irp->AssociatedIrp.SystemBuffer;
+		if (FunctionCode == BIOCQUERYOID)
+		{
+			TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "BIOCQUERYOID Request: Oid=%08lx, Length=%08lx", OidData->Oid, OidData->Length);
+		}
+		else if (FunctionCode == BIOCSETOID)
+		{
+			TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "BIOCSETOID Request: Oid=%08lx, Length=%08lx", OidData->Oid, OidData->Length);
+		}
+		else
+		{
+			TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "Unknown FunctionCode: %x, Oid=%08lx", FunctionCode, OidData->Oid);
+			SET_FAILURE_INVALID_REQUEST();
+			break;
+		}
 
 		//
 		// gain ownership of the Ndis Handle
 		//
-		if (NPF_StartUsingBinding(Open) == FALSE)
+		if (!Open->GroupHead || NPF_StartUsingBinding(Open->GroupHead) == FALSE)
 		{
 			//
 			// MAC unbindind or unbound
 			//
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Open->GroupHead is unavailable or cannot bind, Open->GroupHead=%p", Open->GroupHead);
 			SET_FAILURE_INVALID_REQUEST();
 			break;
 		}
@@ -1806,8 +2033,9 @@ NPF_IoControl(
 			//
 			// Release ownership of the Ndis Handle
 			//
-			NPF_StopUsingBinding(Open);
+			NPF_StopUsingBinding(Open->GroupHead);
 
+			TRACE_MESSAGE(PACKET_DEBUG_LOUD, "RequestListEntry=NULL");
 			SET_FAILURE_NOMEM();
 			break;
 		}
@@ -1817,25 +2045,21 @@ NPF_IoControl(
 		//
 		//  See if it is an Ndis request
 		//
-		OidData = Irp->AssociatedIrp.SystemBuffer;
-
 		if ((IrpSp->Parameters.DeviceIoControl.InputBufferLength == IrpSp->Parameters.DeviceIoControl.OutputBufferLength) &&
 			(IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(PACKET_OID_DATA)) &&
 			(IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(PACKET_OID_DATA) - 1 + OidData->Length))
 		{
-			TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "BIOCSETOID|BIOCQUERYOID Request: Oid=%08lx, Length=%08lx", OidData->Oid, OidData->Length);
-
 #ifdef HAVE_WFP_LOOPBACK_SUPPORT
 			if (Open->Loopback && (OidData->Oid == OID_GEN_MAXIMUM_TOTAL_SIZE || OidData->Oid == OID_GEN_TRANSMIT_BUFFER_SPACE || OidData->Oid == OID_GEN_RECEIVE_BUFFER_SPACE))
 			{
 				if (FunctionCode == BIOCSETOID)
 				{
-					TRACE_MESSAGE(PACKET_DEBUG_LOUD, "Loopback: OID_GEN_MAXIMUM_TOTAL_SIZE & BIOCSETOID, fail it");
+					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Loopback: AdapterName=%ws, OID_GEN_MAXIMUM_TOTAL_SIZE & BIOCSETOID, fail it", Open->AdapterName.Buffer);
 					SET_FAILURE_UNSUCCESSFUL();
 				}
 				else
 				{
-					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Loopback: OID_GEN_MAXIMUM_TOTAL_SIZE & BIOCGETOID, OidData->Data = %d", NPF_LOOPBACK_INTERFACR_MTU + ETHER_HDR_LEN);
+					TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "Loopback: AdapterName=%ws, OID_GEN_MAXIMUM_TOTAL_SIZE & BIOCGETOID, OidData->Data = %d", Open->AdapterName.Buffer, NPF_LOOPBACK_INTERFACR_MTU + ETHER_HDR_LEN);
 					*((PUINT)OidData->Data) = NPF_LOOPBACK_INTERFACR_MTU + ETHER_HDR_LEN;
 					SET_RESULT_SUCCESS(sizeof(PACKET_OID_DATA) - 1 + OidData->Length);
 				}
@@ -1843,7 +2067,7 @@ NPF_IoControl(
 				//
 				// Release ownership of the Ndis Handle
 				//
-				NPF_StopUsingBinding(Open);
+				NPF_StopUsingBinding(Open->GroupHead);
 
 				ExInterlockedInsertTailList(&Open->RequestList,
 					&pRequest->ListElement,
@@ -1855,12 +2079,12 @@ NPF_IoControl(
 			{
 				if (FunctionCode == BIOCSETOID)
 				{
-					TRACE_MESSAGE(PACKET_DEBUG_LOUD, "Loopback: OID_GEN_TRANSMIT_BLOCK_SIZE & BIOCSETOID, fail it");
+					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Loopback: AdapterName=%ws, OID_GEN_TRANSMIT_BLOCK_SIZE & BIOCSETOID, fail it", Open->AdapterName.Buffer);
 					SET_FAILURE_UNSUCCESSFUL();
 				}
 				else
 				{
-					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Loopback: OID_GEN_TRANSMIT_BLOCK_SIZE & BIOCGETOID, OidData->Data = %d", 1);
+					TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "Loopback: AdapterName=%ws, OID_GEN_TRANSMIT_BLOCK_SIZE & BIOCGETOID, OidData->Data = %d", Open->AdapterName.Buffer, 1);
 					*((PUINT)OidData->Data) = 1;
 					SET_RESULT_SUCCESS(sizeof(PACKET_OID_DATA) - 1 + OidData->Length);
 				}
@@ -1868,7 +2092,7 @@ NPF_IoControl(
 				//
 				// Release ownership of the Ndis Handle
 				//
-				NPF_StopUsingBinding(Open);
+				NPF_StopUsingBinding(Open->GroupHead);
 
 				ExInterlockedInsertTailList(&Open->RequestList,
 					&pRequest->ListElement,
@@ -1892,7 +2116,7 @@ NPF_IoControl(
 // 				//
 // 				// Release ownership of the Ndis Handle
 // 				//
-// 				NPF_StopUsingBinding(Open);
+// 				NPF_StopUsingBinding(Open->GroupHead);
 //
 // 				ExInterlockedInsertTailList(&Open->RequestList,
 // 					&pRequest->ListElement,
@@ -1904,12 +2128,12 @@ NPF_IoControl(
 			{
 				if (FunctionCode == BIOCSETOID)
 				{
-					TRACE_MESSAGE(PACKET_DEBUG_LOUD, "Loopback: OID_GEN_MEDIA_IN_USE & BIOCSETOID, fail it");
+					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Loopback: AdapterName=%ws, OID_GEN_MEDIA_IN_USE & BIOCSETOID, fail it", Open->AdapterName.Buffer);
 					SET_FAILURE_UNSUCCESSFUL();
 				}
 				else
 				{
-					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Loopback: OID_GEN_MEDIA_IN_USE & BIOCGETOID, OidData->Data = %d", NdisMediumNull);
+					TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "Loopback: AdapterName=%ws, OID_GEN_MEDIA_IN_USE & BIOCGETOID, OidData->Data = %d", Open->AdapterName.Buffer, NdisMediumNull);
 					*((PUINT)OidData->Data) = NdisMediumNull;
 					OidData->Length = sizeof(UINT);
 					SET_RESULT_SUCCESS(sizeof(PACKET_OID_DATA) - 1 + OidData->Length);
@@ -1918,7 +2142,7 @@ NPF_IoControl(
 				//
 				// Release ownership of the Ndis Handle
 				//
-				NPF_StopUsingBinding(Open);
+				NPF_StopUsingBinding(Open->GroupHead);
 
 				ExInterlockedInsertTailList(&Open->RequestList,
 					&pRequest->ListElement,
@@ -1929,16 +2153,16 @@ NPF_IoControl(
 #endif
 
 #ifdef HAVE_DOT11_SUPPORT
-			if (Open->Medium == NdisMediumNative802_11 && (OidData->Oid == OID_GEN_MEDIA_IN_USE || OidData->Oid == OID_GEN_MEDIA_SUPPORTED))
+			if (Open->Dot11 && (OidData->Oid == OID_GEN_MEDIA_IN_USE || OidData->Oid == OID_GEN_MEDIA_SUPPORTED))
 			{
 				if (FunctionCode == BIOCSETOID)
 				{
-					TRACE_MESSAGE(PACKET_DEBUG_LOUD, "Npcap 802.11: OID_GEN_MEDIA_IN_USE & BIOCSETOID, fail it");
+					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Dot11: AdapterName=%ws, OID_GEN_MEDIA_IN_USE & BIOCSETOID, fail it", Open->AdapterName.Buffer);
 					SET_FAILURE_UNSUCCESSFUL();
 				}
 				else
 				{
-					TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Npcap 802.11: OID_GEN_MEDIA_IN_USE & BIOCGETOID, OidData->Data = %d", NdisMediumRadio80211);
+					TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "Dot11: AdapterName=%ws, OID_GEN_MEDIA_IN_USE & BIOCGETOID, OidData->Data = %d", Open->AdapterName.Buffer, NdisMediumRadio80211);
 					*((PUINT)OidData->Data) = NdisMediumRadio80211;
 					OidData->Length = sizeof(UINT);
 					SET_RESULT_SUCCESS(sizeof(PACKET_OID_DATA) - 1 + OidData->Length);
@@ -1947,7 +2171,7 @@ NPF_IoControl(
 				//
 				// Release ownership of the Ndis Handle
 				//
-				NPF_StopUsingBinding(Open);
+				NPF_StopUsingBinding(Open->GroupHead);
 
 				ExInterlockedInsertTailList(&Open->RequestList,
 					&pRequest->ListElement,
@@ -1997,35 +2221,38 @@ NPF_IoControl(
 
 			if (OidData->Oid == OID_GEN_CURRENT_PACKET_FILTER && FunctionCode == BIOCSETOID)
 			{
-				// ASSERT(Open->GroupHead != NULL);
-				if (Open->GroupHead)
+				ASSERT(Open->GroupHead != NULL);
+				Open->GroupHead->MyPacketFilter = *(ULONG*)OidData->Data;
+				if (Open->GroupHead->MyPacketFilter == NDIS_PACKET_TYPE_ALL_LOCAL)
 				{
-					Open->GroupHead->MyPacketFilter = *(ULONG*)OidData->Data;
-					if (Open->GroupHead->MyPacketFilter == NDIS_PACKET_TYPE_ALL_LOCAL)
-					{
-						Open->GroupHead->MyPacketFilter = 0;
-					}
-#ifdef HAVE_DOT11_SUPPORT
-					combinedPacketFilter = Open->GroupHead->HigherPacketFilter | Open->GroupHead->MyPacketFilter | Open->GroupHead->Dot11PacketFilter;
-#else
-					combinedPacketFilter = Open->GroupHead->HigherPacketFilter | Open->GroupHead->MyPacketFilter;
-#endif
-					pRequest->Request.DATA.SET_INFORMATION.InformationBuffer = &combinedPacketFilter;
+					Open->GroupHead->MyPacketFilter = 0;
 				}
-				else
+
+				// Disable setting Packet Filter for wireless adapters, because this will cause limited connectivity.
+				if (Open->GroupHead->PhysicalMedium == NdisPhysicalMediumNative802_11)
 				{
+					TRACE_MESSAGE2(PACKET_DEBUG_LOUD, "Wireless adapter can't set packet filter, will bypass this request, *(ULONG*)OidData->Data = %p, MyPacketFilter = %p",
+						*(ULONG*)OidData->Data, Open->GroupHead->MyPacketFilter);
+					SET_RESULT_SUCCESS(sizeof(PACKET_OID_DATA) - 1 + OidData->Length);
+
 					//
 					// Release ownership of the Ndis Handle
 					//
-					NPF_StopUsingBinding(Open);
+					NPF_StopUsingBinding(Open->GroupHead);
 
 					ExInterlockedInsertTailList(&Open->RequestList,
 						&pRequest->ListElement,
 						&Open->RequestSpinLock);
 
-					SET_FAILURE_NOMEM();
 					break;
 				}
+
+#ifdef HAVE_DOT11_SUPPORT
+				combinedPacketFilter = Open->GroupHead->HigherPacketFilter | Open->GroupHead->MyPacketFilter | Open->GroupHead->Dot11PacketFilter;
+#else
+				combinedPacketFilter = Open->GroupHead->HigherPacketFilter | Open->GroupHead->MyPacketFilter;
+#endif
+				pRequest->Request.DATA.SET_INFORMATION.InformationBuffer = &combinedPacketFilter;
 			}
 
 			Status = NdisFOidRequest(Open->AdapterHandle, &pRequest->Request);
@@ -2035,7 +2262,7 @@ NPF_IoControl(
 			//
 			// Release ownership of the Ndis Handle
 			//
-			NPF_StopUsingBinding(Open);
+			NPF_StopUsingBinding(Open->GroupHead);
 
 			ExInterlockedInsertTailList(&Open->RequestList,
 				&pRequest->ListElement,
@@ -2044,6 +2271,7 @@ NPF_IoControl(
 			//
 			//  buffer too small
 			//
+			TRACE_MESSAGE(PACKET_DEBUG_LOUD, "buffer is too small");
 			SET_FAILURE_BUFFER_SMALL();
 			break;
 		}
@@ -2057,7 +2285,7 @@ NPF_IoControl(
 		//
 		// Release ownership of the Ndis Handle
 		//
-		NPF_StopUsingBinding(Open);
+		NPF_StopUsingBinding(Open->GroupHead);
 
 		//
 		// Complete the request
@@ -2105,7 +2333,10 @@ NPF_IoControl(
 		}
 		else
 		{
-			SET_FAILURE_INVALID_REQUEST();
+			// Return the error code of NdisFOidRequest() to the application.
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Original NdisFOidRequest() Status = %p", Status);
+			SET_FAILURE_CUSTOM(Status);
+			TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Custom NdisFOidRequest() Status = %p", Status);
 		}
 
 		break;
@@ -2130,9 +2361,8 @@ NPF_IoControl(
 	Irp->IoStatus.Status = Status;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-
+	TRACE_MESSAGE1(PACKET_DEBUG_LOUD, "Status = %p", Status);
 	TRACE_EXIT();
-
 	return Status;
 }
 
@@ -2150,7 +2380,6 @@ NPF_ResetBufferContents(
 	//
 	for (i = 0 ; i < g_NCpu ; i++)
 	{
-		//#pragma prefast(suppress:8103, "There's no Spinlock leak here, as it's released some lines below.")
 		NdisAcquireSpinLock(&Open->CpuData[i].BufferLock);
 	}
 
@@ -2175,11 +2404,9 @@ NPF_ResetBufferContents(
 	//
 	i = g_NCpu;
 
-	do
+	while (i > 0)
 	{
 		i--;
-#pragma prefast(suppress:8107, "There's no Spinlock leak here, as it's allocated some lines above.")
 		NdisReleaseSpinLock(&Open->CpuData[i].BufferLock);
 	}
-	while (i != 0);
 }
